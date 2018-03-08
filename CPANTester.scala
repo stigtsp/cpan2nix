@@ -26,7 +26,7 @@ import io.circe.generic.auto._
 
 
 class Version(s: String) extends Ordered[Version] {
-  require(s exists (c => '0'<=c && c<='9'), s"Version `$s' is expected to contain at least a digit")
+//require(s exists (c => '0'<=c && c<='9'), s"Version `$s' is expected to contain at least a digit")
   private lazy val vectorized: Array[String] = s stripPrefix "v" split "\\s+|(?=[0-9])(?<=[^0-9])|(?=[^0-9])(?<=[0-9])"
   override def hashCode                = vectorized.foldLeft(0)(_ * 31 + _.hashCode)
   override def equals  (that: Any)     = that match { case that1: Version => compare(that1) == 0 /*case _ => false*/ }
@@ -34,7 +34,7 @@ class Version(s: String) extends Ordered[Version] {
   override def toString                = s
 }
 object Version extends Ordering[Version] {
-  implicit def apply(s: String) = new Version(s)
+  def apply(s: String) = new Version(s)
 
   private[this] val INT = "([0-9]+)".r
   def compare(a: Version, b: Version) = {
@@ -100,17 +100,32 @@ class License(s: String) {
 }
 object License {
   def fromString(s: String): Set[License] = s match {
-    case null | "unknown" | "open_source"                                 => Set.empty
-    case "http://dev.perl.org/licenses/" | "perl_5"                       => Set(new License("artistic1"), new License("gpl1Plus"))
-    case "http://opensource.org/licenses/gpl-license.php"                 => Set(new License("gpl1Plus"))
-    case "gpl_2"                                                          => Set(new License("gpl2"))
-    case "lgpl_3_0" | "gpl_3" | "http://www.gnu.org/licenses/gpl-3.0.txt" => Set(new License("gpl3"))
-    case "apache_2_0"                                                     => Set(new License("asl20"))
-    case "artistic_2"                                                     => Set(new License("artistic2"))
-    case "mit"                                                            => Set(new License("mit"))
-    case "bsd"                                                            => Set(new License("bsd"))
-    case x                                                                => println(s"unknown license `$x'");
-                                                                             Set.empty
+    case null
+       | "unknown"                                                                      => Set.empty
+    case "perl_5"       | "http://dev.perl.org/licenses/"
+       | "open_source"  | "http://opensource.org/licenses/Perl"                         => Set(new License("artistic1"), new License("gpl1Plus"))
+    case "gpl_1"        | "http://opensource.org/licenses/gpl-license.php"
+                        | "http://www.gnu.org/licenses/gpl.html"                        => Set(new License("gpl1"))
+    case "gpl_2"        | "http://opensource.org/licenses/gpl-2.0.php"
+                        | "http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt"        => Set(new License("gpl2"))
+    case "lgpl_2_1"     | "http://www.gnu.org/licenses/lgpl-2.1.html"
+                        | "http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt"       => Set(new License("lgpl21"))
+    case "lgpl_3_0"                                                                     => Set(new License("lgpl3"))
+    case "gpl_3"        | "http://www.gnu.org/licenses/gpl-3.0.txt"                     => Set(new License("gpl3"))
+    case                  "http://opensource.org/licenses/mozilla1.1.php"               => Set(new License("mpl11"))
+    case "apache_2_0"                                                                   => Set(new License("asl20"))
+    case "artistic_1"   | "http://opensource.org/licenses/artistic-license.php"         => Set(new License("artistic1"))
+    case "artistic_2"   | "http://www.opensource.org/licenses/artistic-license-2.0.php"
+                        | "http://www.opensource.org/licenses/artistic-license-2.0"
+                        | "http://opensource.org/licenses/Artistic-2.0"
+                        | "http://www.perlfoundation.org/artistic_license_2_0"          => Set(new License("artistic2"))
+    case "mit"          | "http://www.opensource.org/licenses/mit-license.php"
+                        | "http://opensource.org/licenses/mit-license.php"              => Set(new License("mit"))
+    case                  "https://wiki.creativecommons.org/wiki/Public_domain"         => Set(new License("cc0"))
+    case "unrestricted"                                                                 => Set(new License("wtfpl"))
+    case "bsd"          | "http://opensource.org/licenses/bsd-license.php"              => Set(new License("bsd"))
+    case x                                                                              => println(s"unknown license `$x'"); sys.exit(1)
+                                                                                           Set.empty
   }
 }
 
@@ -163,11 +178,11 @@ object NixPackage {
                        , ".tgz"
                        , ".zip"
                        ).map(_.replace(".", "\\.")).mkString("(?:", "|", ")")
-  private[this] val re2 = (mirrors + """/+authors/id/[A-Z0-9-]/[A-Z0-9-]{2}/([A-Z0-9-]+)(?:/[^/]+)*/+([^/]+)-([^/-]+)""" + extentions).r
-  private[this] val re3 = (mirrors + """/+modules/by-module/[^/]+/([^/]+)-([^/-]+)"""                                    + extentions).r
+  private[this] val re2 = (mirrors + """/+authors/id/[A-Z0-9-]/[A-Z0-9-]{2}/([A-Z0-9-]+)(?:/[^/]+)*/+([^/]+)""" + extentions).r
+  private[this] val re3 = (mirrors + """/+modules/by-module/[^/]+/([^/]+)"""                                    + extentions).r
   def fromString(url: String) = url match {
-    case re2(a, n, v) => NixPackage(Some(a), n, v, url)
-    case re3(   n, v) => NixPackage(None   , n, v, url)
+    case re2(a, nameVersion) => val (n, v) = CpanErrata fromNameVersion nameVersion; NixPackage(Some(a), n, v, url)
+    case re3(   nameVersion) => val (n, v) = CpanErrata fromNameVersion nameVersion; NixPackage(None   , n, v, url)
   }
 }
 
@@ -284,15 +299,27 @@ case class CpanPackage(author: Author, name: Name, version: Version, path: Strin
 
 
 object CpanPackage {
-  private[this] val re = ("""[A-Z]/[A-Z]{2}/([A-Z0-9-]+)(?:/[^/]+)*/([^/]+)-([^/-]+)""" + NixPackage.extentions).r
+  private[this] val re = ("""[A-Z]/[A-Z]{2}/([A-Z0-9-]+)(?:/[^/]+)*/([^/]+)""" + NixPackage.extentions).r
   def fromPath(path: String) = path match {
-    case re(author, name, version) => CpanPackage(author, name, version, path)
+    case re(author, nameVersion) => val (name, version) = CpanErrata fromNameVersion nameVersion
+                                    CpanPackage(author, name, version, path)
   }
 }
 
 
 object CpanErrata {
-  val podsToIgnore             = Set[Pod ]           ( "perl", "Config", "Errno", "File::Temp" // <- providedByPerl
+  // *** difficult parse cases
+  private[this] val exception1 = "(PerlMagick)-([0-9.]+-[0-9.]+)".r
+  private[this] val rule1      = "([^/]+)-([^/-]+)".r
+  def fromNameVersion(s: String): (Name, Version) = s match {
+    case "Data-Dumper-Lazy"                 => (s,                                 new Version("0"))
+    case "Spreadsheet-ParseExcel-Assist"    => (s,                                 new Version("0"))
+    case "Spreadsheet-WriteExcel-WebPivot2" => ("Spreadsheet-WriteExcel-WebPivot", new Version("2"))
+    case exception1(n, v)                   => (n,                                 new Version(v))
+    case rule1     (n, v)                   => (n,                                 new Version(v))
+  }
+
+  val podsToIgnore             = Set[Pod ]           ( "perl", "Config", "Errno", "File::Temp" // <- provided By Perl
                                                      )
   val namesToIgnore            = Set[Name]           ( "perl"
                                                      , "PathTools"                             // breaks the installPhase
@@ -305,22 +332,36 @@ object CpanErrata {
                                                      )
 
   // *** do not add to nixpkgs dependencies present on cpan
-  val dependenciesToBreak      = Map[Name, Set[Name]]( new Name("ExtUtils-MakeMaker"  ) -> Set[Name]("podlators", "Encode", "PathTools", "Data-Dumper")         // circular dependency
-                                                     , new Name("Test-Simple"         ) -> Set[Name]("PathTools", "File-Temp", "Scalar-List-Utils", "Storable") // circular dependency
-                                                     , new Name("Exporter"            ) -> Set[Name]("Carp")                                                    // circular dependency
-                                                     , new Name("Test-CleanNamespaces") -> Set[Name]("Moose", "MooseX-Role-Parameterized")                      // circular dependency
-                                                     , new Name("File-ShareDir"       ) -> Set[Name]("File-ShareDir-Install")                                   // circular dependency
+  val dependenciesToBreak      = Map[Name, Set[Name]]( new Name("ExtUtils-MakeMaker"      ) -> Set[Name]("podlators", "Encode", "PathTools", "Data-Dumper")         // circular dependency
+                                                     , new Name("Test-Simple"             ) -> Set[Name]("PathTools", "File-Temp", "Scalar-List-Utils", "Storable") // circular dependency
+                                                     , new Name("Exporter"                ) -> Set[Name]("Carp")                                                    // circular dependency
+                                                     , new Name("Test-CleanNamespaces"    ) -> Set[Name]("Moose", "MooseX-Role-Parameterized")                      // circular dependency
+                                                     , new Name("File-ShareDir"           ) -> Set[Name]("File-ShareDir-Install")                                   // circular dependency
+                                                     //MooX-ConfigFromFile -> MooX-Options
                                                      ) withDefaultValue Set.empty
 
-  // *** add to nixpkgs dependencies missing on cpan
-  val extraBuildDependencies   = Map[Name, Set[Pod ]]( new Name("CPAN"                ) -> Set[Pod]("Archive::Zip")
-                                                     , new Name("Autodia"             ) -> Set[Pod]("DBI")
+  // *** add to nixpkgs dependencies missing on cpan (usually due to missing .meta file)
+  val extraBuildDependencies   = Map[Name, Set[Pod ]]( new Name("CPAN"                    ) -> Set[Pod]("Archive::Zip")
+                                                     , new Name("Autodia"                 ) -> Set[Pod]("DBI")
+                                                     , new Name("Data-Page-Pageset"       ) -> Set[Pod]("Data::Page")
+                                                     , new Name("Data-Taxi"               ) -> Set[Pod]("Debug::ShowStuff")
+                                                     , new Name("DateTime-Calendar-Julian") -> Set[Pod]("DateTime")
+                                                     , new Name("Font-TTF"                ) -> Set[Pod]("IO::String")
+                                                     , new Name("Gnome2-Canvas"           ) -> Set[Pod]("ExtUtils::Depends")
+                                                     , new Name("HTML-Selector-XPath"     ) -> Set[Pod]("Test::Base")
+                                                     , new Name("Module-Info"             ) -> Set[Pod]("Test::Pod", "Test::Pod::Coverage")
+                                                     , new Name("PerlIO-via-symlink"      ) -> Set[Pod]("inc::Module::Install")
                                                      ) withDefaultValue Set.empty
-  val extraRuntimeDependencies = Map[Name, Set[Pod ]]( new Name("Any-Moose"           ) -> Set[Pod]("Mouse", "Moose")
+  val extraRuntimeDependencies = Map[Name, Set[Pod ]]( new Name("Any-Moose"               ) -> Set[Pod]("Mouse", "Moose")
+                                                     , new Name("GDTextUtil"              ) -> Set[Pod]("GD")
+                                                     , new Name("Linux-Inotify2"          ) -> Set[Pod]("common::sense")
+                                                     , new Name("Log-LogLite"             ) -> Set[Pod]("IO::LockedFile")
                                                      ) withDefaultValue Set.empty
 
   // *** pinned packages
   val dontUpgrade              = List[CpanPackage]   ( CpanPackage fromPath "D/DA/DAGOLDEN/CPAN-Meta-2.150005.tar.gz"
+                                                     , CpanPackage fromPath "N/NJ/NJH/MusicBrainz-DiscID-0.03.tar.gz"  // need to fix patchPhase manually
+//                                                   , CpanPackage fromPath "G/GR/GRANTM/XML-SAX-0.96.tar.gz"          // 1.00 does not pass tests?
                                                      )
 
   // *** enforce 'doCheck = false'
@@ -343,11 +384,14 @@ object Cpan {
     }
     val re = ("""(\S+)\s+\S+\s+([A-Z]/[A-Z]{2}/[A-Z0-9-]+(?:/[^/]+)*/[^/]+-[^/-]+""" + NixPackage.extentions + ")").r
     scala.io.Source.fromFile("02packages.details.txt").getLines dropWhile(_.nonEmpty) dropWhile(_.isEmpty) foreach {
-      case re(pod, path) => for (cp <- Try(CpanPackage fromPath path)) {
-                              val cpinterned = allPackages.getOrElseUpdate(cp, cp)
-                              byPod          (               pod) += cpinterned
-                              byName         (           cp.name) += cpinterned
-                              byAuthorAndName(cp.author->cp.name) += cpinterned
+      case re(pod, path) => Try(CpanPackage fromPath path) match {
+                              case Success(cp) =>
+                                val cpinterned = allPackages.getOrElseUpdate(cp, cp)
+                                byPod          (               pod) += cpinterned
+                                byName         (           cp.name) += cpinterned
+                                byAuthorAndName(cp.author->cp.name) += cpinterned
+                              case Failure(e) =>
+                                System.err.println(s"ignore `$path' $e")
                             }
       case line          => //System.err.println(s"ignore `$line'")
     }
@@ -418,8 +462,7 @@ class PullRequester(repopath: File) {
     val licenses:              Option[Array[String]] = """(?s)license\s*=\s*(with[^;]+;\s*)\[([^]]*)\]"""      .r.findFirstMatchIn(source).map(_ group 1 split "\\s+")
     val doCheck:                     Option[String]  =                   """(?s)doCheck\s*=\s*([^;]+);"""      .r.findFirstMatchIn(source).map(_ group 1)
 
-    val name    = new Name   (resolvedNameAndVersion.split('-').init.mkString("-"))
-    val version = new Version(resolvedNameAndVersion.split('-').last)
+    val (name, version) = CpanErrata.fromNameVersion(resolvedNameAndVersion)
 
     def copy( builder:               String
             , versionString:         String
@@ -448,30 +491,30 @@ class PullRequester(repopath: File) {
                                         s = (a.init :+ s"    doCheck = ${text};" :+ a.last) mkString "\n"
         case (`doCheck`, _         ) =>
         case (Some(_),   None      ) => ???
-        case (Some(_),   Some(text)) => s = """(?s)doCheck\s*=\s*[^;]+;""".r.replaceAllIn(s, s"doCheck = ${text};")
+        case (Some(_),   Some(text)) => s = """(?s) doCheck\s*=\s*[^;]+;""".r.replaceAllIn(s, s" doCheck = ${text};")
       }
 
       (this.propagatedBuildInputs, propagatedBuildInputs.nonEmpty) match {
         case (None   , false) =>
         case (None   , true ) => val a = s.split('\n')
                                  s = (a.init :+ s"    propagatedBuildInputs = [ ${propagatedBuildInputs mkString " "} ];" :+ a.last) mkString "\n"
-        case (Some(_), false) => s = """(?s)\s*propagatedBuildInputs\s*=\s*([^;]+);""".r.replaceAllIn(s, "")
-        case (Some(_), true ) => s = """(?s)propagatedBuildInputs\s*=\s*[^;]+;""".r.replaceAllIn(s, s"propagatedBuildInputs = [ ${propagatedBuildInputs mkString " "} ];")
+        case (Some(_), false) => s = """(?s)\s+propagatedBuildInputs\s*=\s*([^;]+);""".r.replaceAllIn(s, "")
+        case (Some(_), true ) => s = """(?s) propagatedBuildInputs\s*=\s*[^;]+;""".r.replaceAllIn(s, s" propagatedBuildInputs = [ ${propagatedBuildInputs mkString " "} ];")
       }
 
       (this.buildInputs, buildInputs.nonEmpty) match {
         case (None   , false) =>
         case (None   , true ) => val a = s.split('\n')
                                s = (a.init :+ s"    buildInputs = [ ${buildInputs mkString " "} ];" :+ a.last) mkString "\n"
-        case (Some(_), false) => s = """(?s)\s*buildInputs\s*=\s*([^;]+);""".r.replaceAllIn(s, "")
-        case (Some(_), true ) => s = """(?s)buildInputs\s*=\s*[^;]+;""".r.replaceAllIn(s, s"buildInputs = [ ${buildInputs mkString " "} ];")
+        case (Some(_), false) => s = """(?s)\s+buildInputs\s*=\s*([^;]+);""".r.replaceAllIn(s, "")
+        case (Some(_), true ) => s = """(?s) buildInputs\s*=\s*[^;]+;""".r.replaceAllIn(s, s" buildInputs = [ ${buildInputs mkString " "} ];")
       }
 
       (this.licenses, licenses.nonEmpty) match {
         case (None   , false) =>
         case (None   , true ) => // FIXME: insert licenses which were absent
         case (Some(_), false) => // FIXME: remove licenses which were present
-        case (Some(_), true ) => s = """(?s)license\s*=\s*(with[^;]+;\s*)[^;]+;""".r.replaceAllIn(s, s"license = with stdenv.lib.licenses; [ ${licenses mkString " "} ];")
+        case (Some(_), true ) => s = """(?s) license\s*=\s*(with[^;]+;\s*)[^;]+;""".r.replaceAllIn(s, s" license = with stdenv.lib.licenses; [ ${licenses mkString " "} ];")
       }
 
       // FIXME: update homepage
@@ -549,13 +592,13 @@ class PullRequester(repopath: File) {
   def prepareCommit(np: NixPackage, cp: CpanPackage): Option[String] = {
     cp.allDeps() // to fail earlier if circular deps found
 
-    /*
     println(s"prepareCommit($np, $cp)")
     println(cp.allDeps() mkString "\n")
     println(s"buildPODs:")
     println(cp.meta.buildPODs mkString "\n")
     println(s"runtimePODs:")
     println(cp.meta.runtimePODs mkString "\n")
+    /*
     */
 
     var message = List.empty[String]
@@ -569,9 +612,6 @@ class PullRequester(repopath: File) {
     buildPerlPackageBlocks find (_._2.resolvedUrl == np.url) match {
       case None =>
         System.err.println(s"$np->$cp not found in perl-packages.nix")
-        None
-      case Some((name, block)) if CpanErrata.dontUpgrade.exists(_.name == name) =>
-        System.err.println(s"$name set not to upgrade")
         None
       case Some((_, block)) =>
         val newBlock = block.updatedTo(cp)
@@ -741,26 +781,33 @@ object CPANTester {
       Result(up.result)
     }
 
-//  val markdown = new java.io.PrintWriter("report.md")
+    val markdown = new java.io.PrintWriter("report.md")
 //  markdown.write(result.report)
-//  markdown.close()
+    markdown.write(result.upgradable mkString "\n")
+    markdown.close()
+
 
     mayberepopath match {
       case None =>
       case Some(repopath) =>
         val pullRequester = new PullRequester(repopath)
-        var bigCommitMessage = "perl packages update:\n\n"
-        for ((np, cp) <- result.upgradable /*if cp.name.toString.equalsIgnoreCase("Cache-Memcached")*/) {
-          pullRequester.prepareCommit(np, cp) match {
+
+        for ((np, cp1) <- result.upgradable sortBy { case (np, cp) if cp.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via docbook
+                                                     case (np, cp)                                                => (1, cp.allDeps().size)  // then smaller first
+                                                   }
+//           if cp1.name.toString.equalsIgnoreCase("PerlMagick")
+             ) {
+          val cp2 = CpanErrata.dontUpgrade.find(_.name == cp1.name) getOrElse cp1
+          pullRequester.prepareCommit(np, cp2) match {
             case Some(message) =>
               println(message)
               // try to build
               val nixcode = s"""|let
                                 |  pkgs = import <nixpkgs> { config.allowBroken = true; };
                                 |in
-                                |  pkgs.perlPackages.${pullRequester.nixifiedName(cp)}
+                                |  pkgs.perlPackages.${pullRequester.nixifiedName(cp2)}
                                 |""".stripMargin
-              val exitCode = Process("nix-build" :: "--builders" :: "" :: "--show-trace" :: "-K" :: "-E" :: nixcode :: Nil,
+              val exitCode = Process("nix-build" :: /*"--builders" :: "" ::*/ "--show-trace" :: "-K" :: "-E" :: nixcode :: Nil,
                                      cwd = repopath,
                                      "NIXPKGS_CONFIG" -> "",
                                      "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"

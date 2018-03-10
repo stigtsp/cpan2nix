@@ -352,6 +352,7 @@ object CpanErrata {
                                     , Name("File-DesktopEntry")                       // nixpkgs has configurePhase incompatible with newer versions
                                     , Name("Mail-SPF")                                // installPhase fails with "ERROR: Can't create '/usr/sbin'"
                                     , Name("GoferTransport-http")                     // installPhase fails with "No rule to make target 'pure_install'"
+//, Name("Test-Trap")
                                     )
 
   // *** hack to work with packages wich are out of perl-packages.nix
@@ -375,7 +376,22 @@ object CpanErrata {
                                     , Name("File-ShareDir"                    ) -> Set( Name("File-ShareDir-Install"))      // circular dependency
                                     , Name("MooX-Options"                     ) -> Set( Name("MooX-ConfigFromFile"))        // circular dependency
                                     , Name("Plack"                            ) -> Set( Name("CGI-Compile"))                // to disable failing test
-                                    , Name("Tie-Hash-Indexed"                 ) -> Set( Name("Test")) // wrong test framework?
+                                    , Name("Tie-Hash-Indexed"                 ) -> Set( Name("Test"))                       // wrong test framework?
+                                    , Name("base"                             ) -> Set( Name("Test-Simple"))                // stop propagating TestSimple13 which break some tests,
+                                    , Name("Carp"                             ) -> Set( Name("Test-Simple"))                // Test::Simple in dependencies does not mean that v1.3 is required
+                                    , Name("parent"                           ) -> Set( Name("Test-Simple"))
+                                    , Name("version"                          ) -> Set( Name("Test-Simple"))
+                                    , Name("constant"                         ) -> Set( Name("Test-Simple"))
+                                    , Name("Test-Exception"                   ) -> Set( Name("Test-Simple"))
+                                    , Name("Test-NoWarnings"                  ) -> Set( Name("Test-Simple"))
+                                    , Name("Test-Aggregate"                   ) -> Set( Name("Test-Simple"))
+                                    , Name("Test-Deep"                        ) -> Set( Name("Test-Simple"))
+                                    , Name("Test-Differences"                 ) -> Set( Name("Test-Simple"))
+                                    , Name("Test-Warn"                        ) -> Set( Name("Test-Simple"))
+                                    , Name("Test-Most"                        ) -> Set( Name("Test-Simple"))
+                                    , Name("Test-Trap"                        ) -> Set( Name("Test-Simple"))
+                                    , Name("Scalar-List-Utils"                ) -> Set( Name("Test-Simple"))
+                                    , Name("Sub-Uplevel"                      ) -> Set( Name("Test-Simple"))
                                     ) withDefaultValue Set.empty
 
   // *** add to nixpkgs dependencies missing on cpan (usually due to missing .meta file; FIXME: look into Makefile.PL then)
@@ -459,7 +475,6 @@ object CpanErrata {
                                     , CpanPackage fromPath "U/UM/UMEMOTO/Socket6-0.28.tar.gz"                  // 2018-03-08: broken on staging (ok on master)
                                     , CpanPackage fromPath "A/AG/AGROLMS/GSSAPI-0.28.tar.gz"                   // 2018-03-08: broken on staging (ok on master)
                                     , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"          // 2.15 seems broken
-                                    , CpanPackage fromPath "L/LE/LEONT/Test-Harness-3.33.tar.gz"               // ?
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -473,7 +488,7 @@ object CpanErrata {
                                     , Name("Task-Catalyst-Tutorial")               -> false // fails with "open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165."
                                     , Name("Dist-Zilla-PluginBundle-TestingMania") -> false // fails with "open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165."
                                     , Name("RSS-Parser-Lite")                      -> false // creates files in $HOME
-//                                  , Name("Compress-Bzip2")                       -> false // test fails with "syntax error near unexpected token `0,' "
+                                    , Name("Compress-Bzip2")                       -> false // broken on staging (test fails with "syntax error near unexpected token `0,' ")
                                     )
 }
 
@@ -876,9 +891,11 @@ object Cpan2Nix {
                                                                                                           }
                                               }
 
-/*
-    val toupdate = nixPkgs.allPackages filter (_.name == Name("GSSAPI"))
-*/
+
+//    val toupdate = nixPkgs.allPackages filter (np => np.name == Name("Compress-Bzip2")
+//    || np.name == Name("Test-Aggregate") || np.name == Name("Tie-Hash-Indexed") || np.name == Name("Data-Dump")
+//    )
+
     val totest = List.newBuilder[String]
     val pullRequester = new PullRequester(repopath)
 

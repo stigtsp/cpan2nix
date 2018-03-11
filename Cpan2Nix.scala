@@ -15,7 +15,7 @@ import java.io.File
 import java.nio.file.{Paths, Files}
 import scala.sys.process._
 import scala.util.{Try, Failure, Success}
-import scala.collection.JavaConverters.asScalaSet
+import scala.collection.JavaConverters._
 import ms.webmaster.launcher.position._
 
 
@@ -222,55 +222,89 @@ case class CpanPackage(author: Author, name: Name, version: Version, path: Strin
                                              s"tar --list --warning=no-unknown-keyword --file $tarballFile".!! split '\n'
   lazy val isModule:       Boolean       = !name.toString.equalsIgnoreCase("Module-Build") && filesInTarball.contains(s"$name-$version/Build.PL")
 
-  case class MetaExcerpt(runtimeMODs: Set[Mod],
-                         buildMODs:   Set[Mod],
+  case class MetaExcerpt(runtimeMODs: Map[Mod, Version],
+                         buildMODs:   Map[Mod, Version],
                          description: Option[String],
                          licenses:    Set[License],
                          homepage:    Option[String])
 
-  lazy val meta = {
+  lazy val meta: MetaExcerpt = {
     val metaContent: String = metaFile.fold("")(file => scala.io.Source.fromFile(file).mkString)
-    var runtime =                                         Set.empty[String]
-    var build   = if (isModule) Set("Module::Build") else Set.empty[String]
-    if (metaContent startsWith "{") {
+    var runtime: Map[String,Any] =                                                Map.empty
+    var build  : Map[String,Any] = if (isModule) Map("Module::Build" -> "0") else Map.empty
+    if (metaContent.isEmpty) {
+      MetaExcerpt( runtime  map { case (m,v) => Mod(m) -> Version(v.toString) }
+                 , build    map { case (m,v) => Mod(m) -> Version(v.toString) }
+                 , None
+                 , Set.empty
+                 , None
+                 )
+    } else if (metaContent startsWith "{") {
       val Right(json) = io.circe.parser.parse(metaContent)
-      runtime ++= json.hcursor.downField("prereqs").downField("runtime"  ).downField("requires").keys.toList.flatten
-      build   ++= json.hcursor.downField("prereqs").downField("configure").downField("requires").keys.toList.flatten
-      build   ++= json.hcursor.downField("prereqs").downField("build"    ).downField("requires").keys.toList.flatten
-    //build   ++= json.hcursor.downField("prereqs").downField("develop"  ).downField("requires").keys.toList.flatten
-      build   ++= json.hcursor.downField("prereqs").downField("test"     ).downField("requires").keys.toList.flatten
-      build   ++= json.hcursor.downField("prereqs").downField("test"     ).downField("suggests").keys.toList.flatten
-      MetaExcerpt( runtime map (Mod(_))
-                 , build   map (Mod(_))
-                 , json.hcursor.downField("abstract").as[String].toOption
-                 , json.hcursor.downField("resources").downField("license").as[Set[String]].getOrElse(Set.empty).flatMap(License.fromString(_))
-                ++ json.hcursor.downField(                       "license").as[Set[String]].getOrElse(Set.empty).flatMap(License.fromString(_))
-                 , json.hcursor.downField("resources").downField("homepage").as[String].toOption
+      for (path   <- List( List("prereqs", "runtime", "requires") );
+           m      <- path.foldLeft[io.circe.ACursor](json.hcursor)(_ downField _).as[Map[String,io.circe.Json]];
+           (k, v) <- m) {
+        runtime += k -> (v.asString orElse v.asNumber.map(_.toString) getOrElse ???)
+      }
+      for (path   <- List( List( "prereqs", "configure", "requires")
+                         , List( "prereqs", "build",     "requires")
+                         , List( "prereqs", "test",      "requires")
+                         , List( "prereqs", "test",      "suggests") );
+           m      <- path.foldLeft[io.circe.ACursor](json.hcursor)(_ downField _).as[Map[String,io.circe.Json]];
+           (k, v) <- m) {
+        build += k -> (v.asString orElse v.asNumber.map(_.toString) getOrElse ???)
+      }
+//    // do not include Test::* to propagatedBuildInputs, it might result in including conflicting libraries
+      build   ++= runtime.filter   (_._1 startsWith "Test::")
+      runtime   = runtime.filterNot(_._1 startsWith "Test::")
+      val description = json.hcursor.downField("abstract").as[String].toOption
+      val licenses    = json.hcursor.downField("resources").downField("license").as[Set[String]].getOrElse(Set.empty).flatMap(License.fromString(_)) ++
+                        json.hcursor.downField(                       "license").as[Set[String]].getOrElse(Set.empty).flatMap(License.fromString(_))
+      val homepage    = json.hcursor.downField("resources").downField("homepage").as[String].toOption
+      MetaExcerpt( runtime  map { case (m,v) => Mod(m) -> Version(v.toString) }
+                 , build    map { case (m,v) => Mod(m) -> Version(v.toString) }
+                 , description
+                 , licenses
+                 , homepage
                  )
     } else {
       val fixedmeta = metaContent.replace("author:       author:", "author:") // invalid yaml in "String-CamelCase-0.03.meta"
       val yaml: java.util.Map[String, Any] = new org.yaml.snakeyaml.Yaml load fixedmeta
-      runtime ++= Try(asScalaSet(yaml.get("requires"          ).asInstanceOf[java.util.Map[String, String]].keySet).toSet).getOrElse(Set.empty)
-      build   ++= Try(asScalaSet(yaml.get("configure_requires").asInstanceOf[java.util.Map[String, String]].keySet).toSet).getOrElse(Set.empty)
-      build   ++= Try(asScalaSet(yaml.get("build_requires"    ).asInstanceOf[java.util.Map[String, String]].keySet).toSet).getOrElse(Set.empty)
-      build   ++= Try(asScalaSet(yaml.get("x_test_requires"   ).asInstanceOf[java.util.Map[String, String]].keySet).toSet).getOrElse(Set.empty)
-      MetaExcerpt( runtime map (Mod(_))
-                 , build   map (Mod(_))
-                 , Try(yaml.get("abstract").asInstanceOf[String]).toOption
-                 , Try(License.fromString(yaml.get("resources").asInstanceOf[java.util.Map[String, String]].get("license"))).getOrElse(Set.empty)
-                 , Try(                   yaml.get("resources").asInstanceOf[java.util.Map[String, String]].get("homepage")).toOption
+      require(yaml != null, s"invalid yaml $path")
+
+      yaml.get("requires"          ).asInstanceOf[java.util.Map[String,Any]] match { case null => ; case m => runtime ++= m.asScala.mapValues{ case null => "" case v => v } }
+      yaml.get("configure_requires").asInstanceOf[java.util.Map[String,Any]] match { case null => ; case m => build   ++= m.asScala.mapValues{ case null => "" case v => v } }
+      yaml.get("build_requires"    ).asInstanceOf[java.util.Map[String,Any]] match { case null => ; case m => build   ++= m.asScala.mapValues{ case null => "" case v => v } }
+      yaml.get("x_test_requires"   ).asInstanceOf[java.util.Map[String,Any]] match { case null => ; case m => build   ++= m.asScala.mapValues{ case null => "" case v => v } }
+
+      build   ++= runtime.filter   (_._1 startsWith "Test::")
+      runtime   = runtime.filterNot(_._1 startsWith "Test::")
+
+      require(yaml != null)
+      val description = Option(                yaml.get("abstract").asInstanceOf[String])
+      val licenses    = ( for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
+                               b <- Option(a.get("license")))
+                          yield License fromString b) getOrElse Set.empty
+      val homepage    = for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
+                             b <- Option(a.get("homepage")))
+                        yield b
+      MetaExcerpt( runtime  map { case (m,v) => Mod(m) -> Version(v.toString) }
+                 , build    map { case (m,v) => Mod(m) -> Version(v.toString) }
+                 , description
+                 , licenses
+                 , homepage
                  )
     }
   }
 
   // todo: check min version
-  private def filterDeps(deps: Set[CpanPackage]) = for (d <- deps if d != this;
-                                                                  if !(d.name.toString.equalsIgnoreCase("Module-Build") && isModule);
-                                                                  if !(CpanErrata.dependenciesToBreak(name) contains d.name))
-                                                   yield d
+  private def filterDeps(deps: Iterable[CpanPackage]) = for (d <- deps if d != this;
+                                                                       if !(d.name.toString.equalsIgnoreCase("Module-Build") && isModule);
+                                                                       if !(CpanErrata.dependenciesToBreak(name) contains d.name))
+                                                        yield d
 
-  lazy val buildDeps:       Set[CpanPackage] = filterDeps(meta.buildMODs   ++ CpanErrata.extraBuildDependencies  (name) flatMap Cpan.modToPackage)
-  lazy val runtimeDeps:     Set[CpanPackage] = filterDeps(meta.runtimeMODs ++ CpanErrata.extraRuntimeDependencies(name) flatMap Cpan.modToPackage)
+  lazy val buildDeps:       Set[CpanPackage] = filterDeps(meta.buildMODs   ++ CpanErrata.extraBuildDependencies  (name) flatMap { case (m,v) => Cpan.modToPackage(m,v) }).toSet
+  lazy val runtimeDeps:     Set[CpanPackage] = filterDeps(meta.runtimeMODs ++ CpanErrata.extraRuntimeDependencies(name) flatMap { case (m,v) => Cpan.modToPackage(m,v) }).toSet
 
   private var _allDeps: Set[CpanPackage] = null
   def allDeps(parents: List[CpanPackage]=Nil): Set[CpanPackage] =
@@ -325,34 +359,49 @@ object CpanErrata {
   })
 
   // *** modules and packages to ignore
-  val modsToIgnore             = Set( Mod("perl"), Mod("Config"), Mod("Errno"), Mod("File::Temp") // <- provided By Perl
-                                    , Mod("Catalyst::Engine::CGI")                                // <- these are for old Catalyst-Runtime-5.8xxxx
-                                    , Mod("Catalyst::Engine::FastCGI")
-                                    , Mod("Catalyst::Engine::HTTP")
-                                    , Mod("Catalyst::Engine::HTTP::Restarter")
-                                    , Mod("Catalyst::Engine::HTTP::Restarter::Watcher")
+  val modsToIgnore             = Map( Mod("perl")                                        -> ((_:Version) => true                         ) // <- provided By Perl
+                                    , Mod("Config")                                      -> ((_:Version) => true                         )
+                                    , Mod("Errno")                                       -> ((_:Version) => true                         )
+                                    , Mod("File::Temp")                                  -> ((_:Version) => true                         )
+                                    , Mod("Test::More")                                  -> ((v:Version) => !v.toString.startsWith("1.3")) // 1.0x is provided By Perl
+                                    , Mod("Test::Simple")                                -> ((v:Version) => !v.toString.startsWith("1.3"))
+                                    , Mod("Test::Builder")                               -> ((v:Version) => !v.toString.startsWith("1.3"))
+                                    , Mod("Test::Builder::Tester")                       -> ((v:Version) => !v.toString.startsWith("1.3"))
+                                    , Mod("Test::Builder::Module")                       -> ((v:Version) => !v.toString.startsWith("1.3"))
+                                    , Mod("Test::Tester")                                -> ((v:Version) => !v.toString.startsWith("1.3"))
+                                    , Mod("ok")                                          -> ((v:Version) => !v.toString.startsWith("1.3"))
+                                    , Mod("Test2::Util::HashBase")                       -> ((v:Version) => !v.toString.startsWith("1.3"))
+                                    , Mod("Test2::Event")                                -> ((v:Version) => !v.toString.startsWith("1.3"))
+                                    , Mod("Test2::API")                                  -> ((v:Version) => !v.toString.startsWith("1.3"))
+                                    , Mod("ExtUtils::MakeMaker")                         -> ((_:Version) => true                         )
+                                    , Mod("Catalyst::Engine::CGI")                       -> ((_:Version) => true                         )  // <- these are for old Catalyst-Runtime-5.8xxxx
+                                    , Mod("Catalyst::Engine::FastCGI")                   -> ((_:Version) => true                         )
+                                    , Mod("Catalyst::Engine::HTTP")                      -> ((_:Version) => true                         )
+                                    , Mod("Catalyst::Engine::HTTP::Restarter")           -> ((_:Version) => true                         )
+                                    , Mod("Catalyst::Engine::HTTP::Restarter::Watcher")  -> ((_:Version) => true                         )
                                     )
-  val namesToIgnore            = Set( Name("perl")
-                                    , Name("if"), Name("Digest-SHA"), Name("autodie") // <- banned (.. = null) in nixpkgs
-                                    , Name("Sys-Virt")                                // must be updated in-sync with `pkgs.libvirt'
-                                    , Name("PathTools")                               // breaks the installPhase
-                                    , Name("Mac-SystemDirectory")                     // fails on linux, I cannot test
-                                    , Name("Mac-Pasteboard")                          // fails on linux, I cannot test
-                                    , Name("Regexp-Copy")                             // broken
-                                    , Name("Socket6")                                 // C code broken "Socket6.xs:109:22: error: 'sv_undef' undeclared (first use in this function); did you mean 'av_undef'?  "
-                                    , Name("IO-Socket-INET6")                         // C code broken "Socket6.xs:109:22: error: 'sv_undef' undeclared (first use in this function); did you mean 'av_undef'?  "
-                                    , Name("Net-Patricia")                            // C code broken "Socket6.xs:109:22: error: 'sv_undef' undeclared (first use in this function); did you mean 'av_undef'?  "
-                                    , Name("GSSAPI")                                  // `heimdal' is broken
-                                    , Name("SOAP-Lite")                               // failed to produce output path '/nix/store/w7kpfrg86sf2ynzv5jvhz1w879pl3igq-perl-IO-SessionData-1.03-devdoc'
-                                    , Name("Catalyst-Engine-HTTP-Prefork")            // meta.broken = true
-                                    , Name("Catalyst-Plugin-HTML-Widget")             // meta.broken = true
-                                    , Name("Devel-SizeMe")                            // meta.broken = true
-                                    , Name("Unicode-ICU-Collator")                    // meta.broken = true
-                                    , Name("Catalyst-Plugin-Unicode-Encoding")        // now Catalyst-Runtime, to be removed from nixpkgs
-                                    , Name("File-DesktopEntry")                       // nixpkgs has configurePhase incompatible with newer versions
-                                    , Name("Mail-SPF")                                // installPhase fails with "ERROR: Can't create '/usr/sbin'"
-                                    , Name("GoferTransport-http")                     // installPhase fails with "No rule to make target 'pure_install'"
-//, Name("Test-Trap")
+  val namesToIgnore            = Map( Name("perl")                                       -> ((_:Version) => true                         )
+                                    , Name("if")                                         -> ((_:Version) => true                         ) // <- banned (.. = null) in nixpkgs
+                                    , Name("Digest-SHA")                                 -> ((_:Version) => true                         ) // <- banned (.. = null) in nixpkgs
+                                    , Name("autodie")                                    -> ((_:Version) => true                         ) // <- banned (.. = null) in nixpkgs
+                                    , Name("Sys-Virt")                                   -> ((_:Version) => true                         ) // must be updated in-sync with `pkgs.libvirt'
+                                    , Name("PathTools")                                  -> ((_:Version) => true                         ) // breaks the installPhase
+                                    , Name("Mac-SystemDirectory")                        -> ((_:Version) => true                         ) // fails on linux, I cannot test
+                                    , Name("Mac-Pasteboard")                             -> ((_:Version) => true                         ) // fails on linux, I cannot test
+                                    , Name("Regexp-Copy")                                -> ((_:Version) => true                         ) // broken
+                                    , Name("Socket6")                                    -> ((_:Version) => true                         ) // C code broken "Socket6.xs:109:22: error: 'sv_undef' undeclared (first use in this function); did you mean 'av_undef'?  "
+                                    , Name("IO-Socket-INET6")                            -> ((_:Version) => true                         ) // C code broken "Socket6.xs:109:22: error: 'sv_undef' undeclared (first use in this function); did you mean 'av_undef'?  "
+                                    , Name("Net-Patricia")                               -> ((_:Version) => true                         ) // C code broken "Socket6.xs:109:22: error: 'sv_undef' undeclared (first use in this function); did you mean 'av_undef'?  "
+                                    , Name("GSSAPI")                                     -> ((_:Version) => true                         ) // `heimdal' is broken
+                                    , Name("SOAP-Lite")                                  -> ((_:Version) => true                         ) // failed to produce output path '/nix/store/w7kpfrg86sf2ynzv5jvhz1w879pl3igq-perl-IO-SessionData-1.03-devdoc'
+                                    , Name("Catalyst-Engine-HTTP-Prefork")               -> ((_:Version) => true                         ) // meta.broken = true
+                                    , Name("Catalyst-Plugin-HTML-Widget")                -> ((_:Version) => true                         ) // meta.broken = true
+                                    , Name("Devel-SizeMe")                               -> ((_:Version) => true                         ) // meta.broken = true
+                                    , Name("Unicode-ICU-Collator")                       -> ((_:Version) => true                         ) // meta.broken = true
+                                    , Name("Catalyst-Plugin-Unicode-Encoding")           -> ((_:Version) => true                         ) // now Catalyst-Runtime, to be removed from nixpkgs
+                                    , Name("File-DesktopEntry")                          -> ((_:Version) => true                         ) // nixpkgs has configurePhase incompatible with newer versions
+                                    , Name("Mail-SPF")                                   -> ((_:Version) => true                         ) // installPhase fails with "ERROR: Can't create '/usr/sbin'"
+                                    , Name("GoferTransport-http")                        -> ((_:Version) => true                         ) // installPhase fails with "No rule to make target 'pure_install'"
                                     )
 
   // *** hack to work with packages wich are out of perl-packages.nix
@@ -377,92 +426,78 @@ object CpanErrata {
                                     , Name("MooX-Options"                     ) -> Set( Name("MooX-ConfigFromFile"))        // circular dependency
                                     , Name("Plack"                            ) -> Set( Name("CGI-Compile"))                // to disable failing test
                                     , Name("Tie-Hash-Indexed"                 ) -> Set( Name("Test"))                       // wrong test framework?
-                                    , Name("base"                             ) -> Set( Name("Test-Simple"))                // stop propagating TestSimple13 which break some tests,
-                                    , Name("Carp"                             ) -> Set( Name("Test-Simple"))                // Test::Simple in dependencies does not mean that v1.3 is required
-                                    , Name("parent"                           ) -> Set( Name("Test-Simple"))
-                                    , Name("version"                          ) -> Set( Name("Test-Simple"))
-                                    , Name("constant"                         ) -> Set( Name("Test-Simple"))
-                                    , Name("Test-Exception"                   ) -> Set( Name("Test-Simple"))
-                                    , Name("Test-NoWarnings"                  ) -> Set( Name("Test-Simple"))
-                                    , Name("Test-Aggregate"                   ) -> Set( Name("Test-Simple"))
-                                    , Name("Test-Deep"                        ) -> Set( Name("Test-Simple"))
-                                    , Name("Test-Differences"                 ) -> Set( Name("Test-Simple"))
-                                    , Name("Test-Warn"                        ) -> Set( Name("Test-Simple"))
-                                    , Name("Test-Most"                        ) -> Set( Name("Test-Simple"))
-                                    , Name("Test-Trap"                        ) -> Set( Name("Test-Simple"))
-                                    , Name("Scalar-List-Utils"                ) -> Set( Name("Test-Simple"))
-                                    , Name("Sub-Uplevel"                      ) -> Set( Name("Test-Simple"))
+                                    , Name("ack"                              ) -> Set( Name("Test-Harness"))               // wrong test framework?
                                     ) withDefaultValue Set.empty
 
+
   // *** add to nixpkgs dependencies missing on cpan (usually due to missing .meta file; FIXME: look into Makefile.PL then)
-  val extraBuildDependencies   = Map( Name("CPAN"                             ) -> Set( Mod("Archive::Zip"))
-                                    , Name("Autodia"                          ) -> Set( Mod("DBI"))
-                                    , Name("Data-Page-Pageset"                ) -> Set( Mod("Data::Page"))
-                                    , Name("Data-Taxi"                        ) -> Set( Mod("Debug::ShowStuff"))
-                                    , Name("DateTime-Calendar-Julian"         ) -> Set( Mod("DateTime"))
-                                    , Name("Font-TTF"                         ) -> Set( Mod("IO::String"))
-                                    , Name("Gnome2-Canvas"                    ) -> Set( Mod("ExtUtils::Depends"))
-                                    , Name("HTML-Selector-XPath"              ) -> Set( Mod("Test::Base"))
-                                    , Name("Module-Info"                      ) -> Set( Mod("Test::Pod")
-                                                                                      , Mod("Test::Pod::Coverage"))
-                                    , Name("PerlIO-via-symlink"               ) -> Set( Mod("inc::Module::Install"))
-                                    , Name("Catalyst-Controller-POD"          ) -> Set( Mod("inc::Module::Install"))
-                                    , Name("RT-Client-REST"                   ) -> Set( Mod("Test::Exception"))
-                                    , Name("HTML-Tidy"                        ) -> Set( Mod("Test::Exception"))
-                                    , Name("Catalyst-Runtime"                 ) -> Set( Mod("Type::Tiny"))
-                                    , Name("FormValidator-Simple"             ) -> Set( Mod("CGI"))
-                                    , Name("Data-FormValidator"               ) -> Set( Mod("CGI"))
-                                    , Name("Test-Run-Plugin-ColorFileVerdicts") -> Set( Mod("Test::Trap"))
-                                    , Name("Test-Run-Plugin-ColorSummary"     ) -> Set( Mod("Test::Trap"))
-                                    , Name("DBIx-Introspector"                ) -> Set( Mod("Test::Fatal"))
-                                    , Name("Gnome2-Canvas"                    ) -> Set( Mod("ExtUtils::PkgConfig")
-                                                                                      , Mod("ExtUtils::Depends"))
-                                    , Name("Gtk2-TrayIcon"                    ) -> Set( Mod("ExtUtils::PkgConfig")
-                                                                                      , Mod("ExtUtils::Depends")
-                                                                                      , Mod("Glib::CodeGen"))
-                                    , Name("Gtk2-Unique"                      ) -> Set( Mod("Glib::CodeGen"))
-                                    , Name("HTTP-Response-Encoding"           ) -> Set( Mod("LWP::UserAgent"))
-                                    , Name("RT-Client-REST"                   ) -> Set( Mod("CGI")
-                                                                                      , Mod("DateTime")
-                                                                                      , Mod("DateTime::Format::DateParse")
-                                                                                      , Mod("Error")
-                                                                                      , Mod("Exception::Class")
-                                                                                      , Mod("HTTP::Cookies")
-                                                                                      , Mod("LWP::UserAgent")
-                                                                                      , Mod("Params::Validate")
-                                                                                      , Mod("Test::Exception"))
-                                    ) withDefaultValue Set.empty
-  val extraRuntimeDependencies = Map( Name("Any-Moose"                        ) -> Set( Mod("Mouse")
-                                                                                      , Mod("Moose"))
-                                    , Name("GDTextUtil"                       ) -> Set( Mod("GD"))
-                                    , Name("Linux-Inotify2"                   ) -> Set( Mod("common::sense"))
-                                    , Name("Log-LogLite"                      ) -> Set( Mod("IO::LockedFile"))
-                                    , Name("XML-SAX"                          ) -> Set( Mod("XML::SAX::Exception"))
-                                    , Name("Proc-WaitStat"                    ) -> Set( Mod("IPC::Signal"))
-                                    , Name("RSS-Parser-Lite"                  ) -> Set( Mod("local::lib"))
-                                    , Name("Statistics-TTest"                 ) -> Set( Mod("Statistics::Distributions")
-                                                                                      , Mod("Statistics::Descriptive"))
-                                    , Name("Text-WrapI18N"                    ) -> Set( Mod("Text::CharWidth"))
-                                    , Name("XML-Grove"                        ) -> Set( Mod("Data::Grove"))
-                                    , Name("XML-Handler-YAWriter"             ) -> Set( Mod("XML::Parser::PerlSAX"))
-                                    , Name("libxml-perl"                      ) -> Set( Mod("XML::Parser"))
-                                    , Name("Crypt-PKCS10"                     ) -> Set( Mod("Convert::ASN1"))
-                                    , Name("Gtk2-Unique"                      ) -> Set( Mod("Cairo")
-                                                                                      , Mod("Pango"))
-                                    , Name("Gtk2-ImageView"                   ) -> Set( Mod("Pango"))
-                                    , Name("Gtk2-TrayIcon"                    ) -> Set( Mod("Pango"))
-                                    , Name("Gtk2-GladeXML"                    ) -> Set( Mod("Pango"))
-                                    , Name("Goo-Canvas"                       ) -> Set( Mod("Pango"))
-                                    , Name("Gnome2-Wnck"                      ) -> Set( Mod("Pango"))
-                                    , Name("Gnome2-Canvas"                    ) -> Set( Mod("Glib")
-                                                                                      , Mod("Gtk2")
-                                                                                      , Mod("Pango"))
-                                    ) withDefaultValue Set.empty
+  val extraBuildDependencies   = Map( Name("CPAN"                             ) -> Map( Mod("Archive::Zip")                 -> Version("0"))
+                                    , Name("Autodia"                          ) -> Map( Mod("DBI")                          -> Version("0"))
+                                    , Name("Data-Page-Pageset"                ) -> Map( Mod("Data::Page")                   -> Version("0"))
+                                    , Name("Data-Taxi"                        ) -> Map( Mod("Debug::ShowStuff")             -> Version("0"))
+                                    , Name("DateTime-Calendar-Julian"         ) -> Map( Mod("DateTime")                     -> Version("0"))
+                                    , Name("Font-TTF"                         ) -> Map( Mod("IO::String")                   -> Version("0"))
+                                    , Name("Gnome2-Canvas"                    ) -> Map( Mod("ExtUtils::Depends")            -> Version("0"))
+                                    , Name("HTML-Selector-XPath"              ) -> Map( Mod("Test::Base")                   -> Version("0"))
+                                    , Name("Module-Info"                      ) -> Map( Mod("Test::Pod")                    -> Version("0")
+                                                                                      , Mod("Test::Pod::Coverage")          -> Version("0"))
+                                    , Name("PerlIO-via-symlink"               ) -> Map( Mod("inc::Module::Install")         -> Version("0"))
+                                    , Name("Catalyst-Controller-POD"          ) -> Map( Mod("inc::Module::Install")         -> Version("0"))
+                                    , Name("RT-Client-REST"                   ) -> Map( Mod("Test::Exception")              -> Version("0"))
+                                    , Name("HTML-Tidy"                        ) -> Map( Mod("Test::Exception")              -> Version("0"))
+                                    , Name("Catalyst-Runtime"                 ) -> Map( Mod("Type::Tiny")                   -> Version("0"))
+                                    , Name("FormValidator-Simple"             ) -> Map( Mod("CGI")                          -> Version("0"))
+                                    , Name("Data-FormValidator"               ) -> Map( Mod("CGI")                          -> Version("0"))
+                                    , Name("Test-Run-Plugin-ColorFileVerdicts") -> Map( Mod("Test::Trap")                   -> Version("0"))
+                                    , Name("Test-Run-Plugin-ColorSummary"     ) -> Map( Mod("Test::Trap")                   -> Version("0"))
+                                    , Name("DBIx-Introspector"                ) -> Map( Mod("Test::Fatal")                  -> Version("0"))
+                                    , Name("Gnome2-Canvas"                    ) -> Map( Mod("ExtUtils::PkgConfig")          -> Version("0")
+                                                                                      , Mod("ExtUtils::Depends")            -> Version("0"))
+                                    , Name("Gtk2-TrayIcon"                    ) -> Map( Mod("ExtUtils::PkgConfig")          -> Version("0")
+                                                                                      , Mod("ExtUtils::Depends")            -> Version("0")
+                                                                                      , Mod("Glib::CodeGen")                -> Version("0"))
+                                    , Name("Gtk2-Unique"                      ) -> Map( Mod("Glib::CodeGen")                -> Version("0"))
+                                    , Name("HTTP-Response-Encoding"           ) -> Map( Mod("LWP::UserAgent")               -> Version("0"))
+                                    , Name("RT-Client-REST"                   ) -> Map( Mod("CGI")                          -> Version("0")
+                                                                                      , Mod("DateTime")                     -> Version("0")
+                                                                                      , Mod("DateTime::Format::DateParse")  -> Version("0")
+                                                                                      , Mod("Error")                        -> Version("0")
+                                                                                      , Mod("Exception::Class")             -> Version("0")
+                                                                                      , Mod("HTTP::Cookies")                -> Version("0")
+                                                                                      , Mod("LWP::UserAgent")               -> Version("0")
+                                                                                      , Mod("Params::Validate")             -> Version("0")
+                                                                                      , Mod("Test::Exception")              -> Version("0"))
+                                    ) withDefaultValue Map.empty
+  val extraRuntimeDependencies = Map( Name("Any-Moose"                        ) -> Map( Mod("Mouse")                        -> Version("0")
+                                                                                      , Mod("Moose")                        -> Version("0"))
+                                    , Name("GDTextUtil"                       ) -> Map( Mod("GD")                           -> Version("0"))
+                                    , Name("Linux-Inotify2"                   ) -> Map( Mod("common::sense")                -> Version("0"))
+                                    , Name("Log-LogLite"                      ) -> Map( Mod("IO::LockedFile")               -> Version("0"))
+                                    , Name("XML-SAX"                          ) -> Map( Mod("XML::SAX::Exception")          -> Version("0"))
+                                    , Name("Proc-WaitStat"                    ) -> Map( Mod("IPC::Signal")                  -> Version("0"))
+                                    , Name("RSS-Parser-Lite"                  ) -> Map( Mod("local::lib")                   -> Version("0"))
+                                    , Name("Statistics-TTest"                 ) -> Map( Mod("Statistics::Distributions")    -> Version("0")
+                                                                                      , Mod("Statistics::Descriptive")      -> Version("0"))
+                                    , Name("Text-WrapI18N"                    ) -> Map( Mod("Text::CharWidth")              -> Version("0"))
+                                    , Name("XML-Grove"                        ) -> Map( Mod("Data::Grove")                  -> Version("0"))
+                                    , Name("XML-Handler-YAWriter"             ) -> Map( Mod("XML::Parser::PerlSAX")         -> Version("0"))
+                                    , Name("libxml-perl"                      ) -> Map( Mod("XML::Parser")                  -> Version("0"))
+                                    , Name("Crypt-PKCS10"                     ) -> Map( Mod("Convert::ASN1")                -> Version("0"))
+                                    , Name("Gtk2-Unique"                      ) -> Map( Mod("Cairo")                        -> Version("0")
+                                                                                      , Mod("Pango")                        -> Version("0"))
+                                    , Name("Gtk2-ImageView"                   ) -> Map( Mod("Pango")                        -> Version("0"))
+                                    , Name("Gtk2-TrayIcon"                    ) -> Map( Mod("Pango")                        -> Version("0"))
+                                    , Name("Gtk2-GladeXML"                    ) -> Map( Mod("Pango")                        -> Version("0"))
+                                    , Name("Goo-Canvas"                       ) -> Map( Mod("Pango")                        -> Version("0"))
+                                    , Name("Gnome2-Wnck"                      ) -> Map( Mod("Pango")                        -> Version("0"))
+                                    , Name("Gnome2-Canvas"                    ) -> Map( Mod("Glib")                         -> Version("0")
+                                                                                      , Mod("Gtk2")                         -> Version("0")
+                                                                                      , Mod("Pango")                        -> Version("0"))
+                                    ) withDefaultValue Map.empty
 
   // *** pinned packages
   val pinnedPackages           = Set( CpanPackage fromPath "D/DA/DAGOLDEN/CPAN-Meta-2.150005.tar.gz"           // newer version broken
                                     , CpanPackage fromPath "N/NJ/NJH/MusicBrainz-DiscID-0.03.tar.gz"           // need to review patchPhase manually
-                                    , CpanPackage fromPath "P/PV/PVANDRY/gettext-1.05.tar.gz"                  // complex buildInputs expression, need to update manually
                                     , CpanPackage fromPath "P/PM/PMQS/Compress-Raw-Zlib-2.074.tar.gz"          // in external .nix file, need to update manually
                                     , CpanPackage fromPath "I/IS/ISHIGAKI/DBD-SQLite-1.56.tar.gz"              // in external .nix file, need to update manually
                                     , CpanPackage fromPath "P/PM/PMQS/DB_File-1.831.tar.gz"                    // in external .nix file, need to update manually
@@ -481,14 +516,14 @@ object CpanErrata {
   val doCheckOverride          = Map( Name("PathTools")                            -> false
                                     , Name("Net-HTTP")                             -> false
                                     , Name("Net-Amazon-MechanicalTurk")            -> false // wants network
-                                    , Name("NetAddr-IP")                           -> false // 2018-03-08: broken on staging (ok on master)
-                                    , Name("JSON")                                 -> false // 2018-03-08: broken on staging (ok on master)
-                                    , Name("YAML-LibYAML")                         -> false // 2018-03-08: broken on staging (ok on master)
-                                    , Name("Razor2-Client-Agent")                  -> false // 2018-03-08: broken on staging (ok on master)
+                                    , Name("NetAddr-IP")                           -> false // 2018-03-08: tests broken on staging (ok on master)
+                                    , Name("JSON")                                 -> false // 2018-03-08: tests broken on staging (ok on master)
+                                    , Name("YAML-LibYAML")                         -> false // 2018-03-08: tests broken on staging (ok on master)
+                                    , Name("Razor2-Client-Agent")                  -> false // 2018-03-08: tests broken on staging (ok on master)
+                                    , Name("Compress-Bzip2")                       -> false // 2018-03-08: tests broken on staging (test fails with "syntax error near unexpected token `0,' ")
                                     , Name("Task-Catalyst-Tutorial")               -> false // fails with "open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165."
                                     , Name("Dist-Zilla-PluginBundle-TestingMania") -> false // fails with "open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165."
                                     , Name("RSS-Parser-Lite")                      -> false // creates files in $HOME
-                                    , Name("Compress-Bzip2")                       -> false // broken on staging (test fails with "syntax error near unexpected token `0,' ")
                                     )
 }
 
@@ -518,19 +553,25 @@ object Cpan {
     }
   }
 
-  def modToPackage(mod: Mod): Option[CpanPackage] =
-    if (CpanErrata.modsToIgnore contains mod)
-      None
-    else
-      byMod(mod).toList match {
-        case Nil                                                  => throw new RuntimeException(s"mod `$mod' not found, maybe ${byMod.keys filter (_.toString.toUpperCase.replaceAll("[:-]","") == mod.toString.toUpperCase.replaceAll("[:-]","")) mkString " "}");
-        case cp::Nil if CpanErrata.namesToIgnore contains cp.name => None
-        case cp::Nil                                              => CpanErrata.pinnedPackages.find(_.name == cp.name) match {
-                                                                       case Some(pinnedcp) => Some(pinnedcp)
-                                                                       case None           => Some(cp)
-                                                                     }
-        case cpps                                                 => throw new RuntimeException(s"mod `$mod' provided by many $cpps");
-      }
+  def modToPackage(mod: Mod, version: Version): Option[CpanPackage] =
+    CpanErrata.modsToIgnore.get(mod) match {
+      case Some(pred) if pred(version) =>
+        None
+      case _ =>
+        byMod(mod).toList match {
+          case Nil     => throw new RuntimeException(s"mod `$mod' not found, maybe ${byMod.keys filter (_.toString.toUpperCase.replaceAll("[:-]","") == mod.toString.toUpperCase.replaceAll("[:-]","")) mkString " "}");
+          case cp::Nil => CpanErrata.namesToIgnore.get(cp.name) match {
+                            case Some(pred) if pred(cp.version) =>
+                              None
+                            case _ =>
+                              CpanErrata.pinnedPackages.find(_.name == cp.name) match {
+                                case Some(pinnedcp) => Some(pinnedcp)
+                                case None           => Some(cp)
+                              }
+                          }
+          case cpps    => throw new RuntimeException(s"mod `$mod' provided by many $cpps");
+        }
+    }
 
   def downloadFile(path: String): Option[File] = {
     val localfilename     = new File(s"${__DIR__}/spool/${Paths.get(path).getFileName}")
@@ -831,56 +872,58 @@ object Cpan2Nix {
     require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-1"                     :: Nil, cwd = repopath).! == 0) // Mime[Tt]ools https://github.com/NixOS/nixpkgs/pull/36655
     require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-2"                     :: Nil, cwd = repopath).! == 0)
     require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-3"                     :: Nil, cwd = repopath).! == 0)
-    require(Process("git" :: "branch"      :: "-f" :: "perl-packages-update-5" :: "HEAD"          :: Nil, cwd = repopath).! == 0)
-    require(Process("git" :: "checkout"    ::         "perl-packages-update-5"                    :: Nil, cwd = repopath).! == 0)
+    require(Process("git" :: "branch"      :: "-f" :: "perl-packages-update-3" :: "HEAD"          :: Nil, cwd = repopath).! == 0)
+    require(Process("git" :: "checkout"    ::         "perl-packages-update-3"                    :: Nil, cwd = repopath).! == 0)
     val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
 
 
     val canUpgradeMemo = collection.mutable.Map.empty[NixPackage, Option[CpanPackage]]
     def canUpgrade(np: NixPackage): Option[CpanPackage] = canUpgradeMemo.getOrElseUpdate(np, {
-      if (CpanErrata.namesToIgnore contains np.name)
-        None
-      else
-        CpanErrata.pinnedPackages find (_.name == np.name) orElse {
-          np.maybeauthor match {
-            case Some(author) =>
-              Cpan.byAuthorAndName(author->np.name) match {
-                case cpps if cpps.isEmpty                         =>
-                  Cpan.byName(np.name) match {
-                    case cpps if cpps.isEmpty                          => val mod = Mod(np.name.toString.replace("-", "::")) // try to understand as module name
-                                                                          Cpan.byMod(mod).toList match {
-                                                                            case cp::Nil => System.err.println(f"${np.url}%-90s not found in CPAN; but there is $mod in $cp");
-                                                                                            None // Some(cp)
-                                                                            case _       => System.err.println(f"${np.url}%-90s not found in CPAN");
-                                                                                            None
-                                                                          }
-                    case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
-                    case cpps if cpps forall (_.version < np.version)  => System.err.println(f"${np.url}%-90s not found in CPAN; there are only ${cpps.toArray mkString ", "}")
-                                                                          Some(cpps.maxBy(_.version))
-                  }
-                case cpps if cpps exists (np.version < _.version) =>
-                  Some(cpps.maxBy(_.version))
-                case cpps if cpps exists (np.version == _.version)=>
-                  Cpan.byName(np.name) match {
-                    case cpps if cpps exists (np.version < _.version) => System.err.println(f"${np.url}%-90s other authors have newer versions ${cpps.filter(np.version < _.version).groupBy(_.author.toString).mapValues(_.map(_.version).toList.sorted) mkString ", "}")
-                                                                         Some(cpps.maxBy(_.version))
-                    case _                                            => Some(cpps.find(_.version == np.version).get)
-                  }
-                case cpps if cpps forall (_.version < np.version) =>
-                  Cpan.byName(np.name) match {
-                    case cpps if cpps exists (np.version < _.version) => Some(cpps.maxBy(_.version))
-                    case _                                            => System.err.println(f"${np.url}%-90s version not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
-                                                                         Some(cpps.maxBy(_.version))
-                  }
-              }
-            case None => // author is not specified in nixpkgs
-              Cpan.byName(np.name) match {
-               case cpps if cpps.isEmpty                          => throw new RuntimeException(s"${np.url} not found in CPAN")
-               case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
-               case cpps if cpps forall (_.version < np.version)  => throw new RuntimeException(s"${np.url} not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
-             }
+      CpanErrata.namesToIgnore.get(np.name) match {
+        case Some(pred) if pred(np.version) =>
+          None
+        case _ =>
+          CpanErrata.pinnedPackages find (_.name == np.name) orElse {
+            np.maybeauthor match {
+              case Some(author) =>
+                Cpan.byAuthorAndName(author->np.name) match {
+                  case cpps if cpps.isEmpty                         =>
+                    Cpan.byName(np.name) match {
+                      case cpps if cpps.isEmpty                          => val mod = Mod(np.name.toString.replace("-", "::")) // try to understand as module name
+                                                                            Cpan.byMod(mod).toList match {
+                                                                              case cp::Nil => System.err.println(f"${np.url}%-90s not found in CPAN; but there is $mod in $cp");
+                                                                                              None // Some(cp)
+                                                                              case _       => System.err.println(f"${np.url}%-90s not found in CPAN");
+                                                                                              None
+                                                                            }
+                      case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
+                      case cpps if cpps forall (_.version < np.version)  => System.err.println(f"${np.url}%-90s not found in CPAN; there are only ${cpps.toArray mkString ", "}")
+                                                                            Some(cpps.maxBy(_.version))
+                    }
+                  case cpps if cpps exists (np.version < _.version) =>
+                    Some(cpps.maxBy(_.version))
+                  case cpps if cpps exists (np.version == _.version)=>
+                    Cpan.byName(np.name) match {
+                      case cpps if cpps exists (np.version < _.version) => System.err.println(f"${np.url}%-90s other authors have newer versions ${cpps.filter(np.version < _.version).groupBy(_.author.toString).mapValues(_.map(_.version).toList.sorted) mkString ", "}")
+                                                                           Some(cpps.maxBy(_.version))
+                      case _                                            => Some(cpps.find(_.version == np.version).get)
+                    }
+                  case cpps if cpps forall (_.version < np.version) =>
+                    Cpan.byName(np.name) match {
+                      case cpps if cpps exists (np.version < _.version) => Some(cpps.maxBy(_.version))
+                      case _                                            => System.err.println(f"${np.url}%-90s version not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
+                                                                           Some(cpps.maxBy(_.version))
+                    }
+                }
+              case None => // author is not specified in nixpkgs
+                Cpan.byName(np.name) match {
+                 case cpps if cpps.isEmpty                          => throw new RuntimeException(s"${np.url} not found in CPAN")
+                 case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
+                 case cpps if cpps forall (_.version < np.version)  => throw new RuntimeException(s"${np.url} not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
+               }
+            }
           }
-        }
+      }
     })
 
     val toupdate = nixPkgs.allPackages sortBy { case np if np.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
@@ -891,11 +934,6 @@ object Cpan2Nix {
                                                                                                           }
                                               }
 
-
-//    val toupdate = nixPkgs.allPackages filter (np => np.name == Name("Compress-Bzip2")
-//    || np.name == Name("Test-Aggregate") || np.name == Name("Tie-Hash-Indexed") || np.name == Name("Data-Dump")
-//    )
-
     val totest = List.newBuilder[String]
     val pullRequester = new PullRequester(repopath)
 
@@ -904,10 +942,17 @@ object Cpan2Nix {
          message <- pullRequester.prepareCommit(np, cp)) {
       println("----")
       println(message)
+
       totest += pullRequester.nixifiedName(cp)
-//    Process("git" :: "commit" :: "-m" :: s"[cpan2nix] $message" :: "pkgs/top-level/perl-packages.nix" :: Nil,
-//            cwd = repopath).!
+/*
+      Process("git" :: "commit" :: "-m" :: s"[cpan2nix] $message" :: "pkgs/top-level/perl-packages.nix" :: Nil,
+              cwd = repopath).!
+*/
+
     }
+
+//    totest += "TestAggregate"
+
 
     // try to build
     val nixcode = s"""|let
@@ -923,7 +968,9 @@ object Cpan2Nix {
     val exitCode = Process("nix-build"
 //                      :: "--builders" :: ""
 
-                        :: "--show-trace" :: "--keep-going" :: "--keep-failed" :: "-E" :: nixcode :: Nil,
+                        :: "--show-trace"
+                        :: "--keep-going"
+                        :: "--keep-failed" :: "-E" :: nixcode :: Nil,
                            cwd = repopath,
                            "NIXPKGS_CONFIG" -> "",
                            "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"

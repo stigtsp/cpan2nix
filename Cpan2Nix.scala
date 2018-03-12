@@ -90,10 +90,10 @@ object License {
     case null
        | "unknown"                                                                      => Set.empty
     case "perl_5"       | "http://dev.perl.org/licenses/"
-                        | "http://opensource.org/licenses/Perl"                         => Set(new License("artistic1"), new License("gpl1Plus"))
+       | "perl"         | "http://opensource.org/licenses/Perl"                         => Set(new License("artistic1"), new License("gpl1Plus"))
     case "open_source"                                                                  => Set(new License("free"))
     case "gpl_1"        | "http://opensource.org/licenses/gpl-license.php"
-                        | "http://www.gnu.org/licenses/gpl.html"                        => Set(new License("gpl1Plus"))
+       | "gpl"          | "http://www.gnu.org/licenses/gpl.html"                        => Set(new License("gpl1Plus"))
     case "gpl_2"        | "http://opensource.org/licenses/gpl-2.0.php"
                         | "http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt"        => Set(new License("gpl2Plus"))
     case "lgpl_2_1"     | "http://www.gnu.org/licenses/lgpl-2.1.html"
@@ -259,13 +259,15 @@ case class CpanPackage(author: Author, name: Name, version: Version, path: Strin
       yaml.get("build_requires"    ).asInstanceOf[java.util.Map[String,Any]] match { case null => ; case m => build   ++= m.asScala.mapValues{ case null => "" case v => v } }
       yaml.get("x_test_requires"   ).asInstanceOf[java.util.Map[String,Any]] match { case null => ; case m => build   ++= m.asScala.mapValues{ case null => "" case v => v } }
 
-      val description = Option(                yaml.get("abstract").asInstanceOf[String])
-      val licenses    = ( for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
-                               b <- Option(a.get("license")))
-                          yield License fromString b) getOrElse Set.empty
-      val homepage    = for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
-                             b <- Option(a.get("homepage")))
-                        yield b
+      description = Option(yaml.get("abstract").asInstanceOf[String])
+      licenses    =  ( Option(yaml.get("license").asInstanceOf[String]).toSet ++
+                       ( for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
+                              b <- Option(a.get("license")))
+                          yield b)
+                     ) flatMap (License fromString _)
+      homepage    = for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
+                         b <- Option(a.get("homepage")))
+                    yield b
     }
 
     // do not include Test::* to propagatedBuildInputs, it might result in colliding the conflicting test libraries (e.g. Test::Simple-13 when an olde version is expected)

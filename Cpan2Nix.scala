@@ -265,7 +265,7 @@ case class CpanPackage(author: Author, name: Name, version: Version, path: Strin
                        ( for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
                               b <- Option(a.get("license")))
                           yield b)
-                     ) flatMap (License fromString _)
+                     ) flatMap (_ split ",\\s*") flatMap (License fromString _)
       homepage    = for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
                          b <- Option(a.get("homepage")))
                     yield b

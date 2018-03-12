@@ -95,14 +95,15 @@ object License {
     case "gpl_1"        | "http://opensource.org/licenses/gpl-license.php"
        | "gpl"          | "http://www.gnu.org/licenses/gpl.html"                        => Set(new License("gpl1Plus"))
     case "gpl_2"        | "http://opensource.org/licenses/gpl-2.0.php"
-                        | "http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt"        => Set(new License("gpl2Plus"))
+       | "gpl2"         | "http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt"        => Set(new License("gpl2Plus"))
     case "lgpl_2_1"     | "http://www.gnu.org/licenses/lgpl-2.1.html"
-                        | "http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt"       => Set(new License("lgpl21Plus"))
+       | "lgpl"         | "http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt"       => Set(new License("lgpl21Plus"))
     case "lgpl_3_0"                                                                     => Set(new License("lgpl3Plus"))
     case "gpl_3"        | "http://www.gnu.org/licenses/gpl-3.0.txt"                     => Set(new License("gpl3Plus"))
-    case                  "http://opensource.org/licenses/mozilla1.1.php"               => Set(new License("mpl11"))
+    case "mozilla"      | "http://opensource.org/licenses/mozilla1.1.php"               => Set(new License("mpl11"))
     case "apache_2_0"                                                                   => Set(new License("asl20"))
-    case "artistic_1"   | "http://opensource.org/licenses/artistic-license.php"         => Set(new License("artistic1"))
+    case "artistic_1"   | "http://opensource.org/licenses/artistic-license.php"
+       | "artistic"                                                                     => Set(new License("artistic1"))
     case "artistic_2"   | "http://www.opensource.org/licenses/artistic-license-2.0.php"
                         | "http://www.opensource.org/licenses/artistic-license-2.0"
                         | "http://opensource.org/licenses/Artistic-2.0"
@@ -275,7 +276,7 @@ case class CpanPackage(author: Author, name: Name, version: Version, path: Strin
     runtime   = runtime.filterNot(_._1 startsWith "Test::")
     MetaExcerpt( runtime  map { case (m,v) => Mod(m) -> Version(v.toString) }
                , build    map { case (m,v) => Mod(m) -> Version(v.toString) }
-               , description
+               , description filterNot (_ == "unknown")
                , licenses
                , homepage
                )

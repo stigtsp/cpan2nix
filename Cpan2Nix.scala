@@ -10,7 +10,7 @@ run(CLASS => 'Cpan2Nix',
 
 // TODO: remove (=null) modules which are included in perl
 
-import `io.circe:circe-parser_%SCALAVERSION%:0.9.1`
+import `io.circe::circe-parser:0.9.1`
 import `org.yaml:snakeyaml:1.20`
 
 import java.io.File
@@ -212,7 +212,7 @@ case class CpanPackage(author: Author, name: Name, version: Version, path: Strin
   lazy val sha256:      SHA256       = SHA256 fromString s"nix hash-file --type sha256 --base32 ${tarballFile}".!!.trim
 
   lazy val filesInTarball: Array[String] = if (tarballFile.getName endsWith ".zip")
-                                             Array.empty // FIXME
+                                             Array.empty // FIXME: like files in .zip
                                            else
                                              s"tar --list --warning=no-unknown-keyword --file $tarballFile".!! split '\n'
   lazy val isModule:       Boolean       = !name.toString.equalsIgnoreCase("Module-Build") && filesInTarball.contains(s"$name-$version/Build.PL")
@@ -530,7 +530,7 @@ object CpanErrata {
                                     , Name("Task-Catalyst-Tutorial")               -> false // fails with "open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165."
                                     , Name("Dist-Zilla-PluginBundle-TestingMania") -> false // fails with "open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165."
                                     , Name("RSS-Parser-Lite")                      -> false // creates files in $HOME
-//, Name("B-C")                      -> false
+                                    , Name("B-C")                                  -> false // test failed, mark it broken?
                                     )
 }
 
@@ -600,11 +600,13 @@ object Cpan {
 
 class PullRequester(repopath: File) {
   object LocalPerl {
-    var theOldestSupportedPerl = Process("nix-build" :: "--show-trace" :: "-E" :: "(import <nixpkgs> { }).perl522" :: Nil,
-                                         cwd = repopath,
-                                         "NIXPKGS_CONFIG" -> "",
-                                         "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
-                                         ).!!.trim
+    var theOldestSupportedPerl = Process( "nix-build" :: "--show-trace"
+                                       :: "--option" :: "binary-caches" :: "http://nix-cache.s3.amazonaws.com/"
+                                       :: "-E" :: "(import <nixpkgs> { }).perl522" :: Nil,
+                                          cwd = repopath,
+                                          "NIXPKGS_CONFIG" -> "",
+                                          "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
+                                        ).!!.trim
 
     private[this] val localVersions = collection.mutable.HashMap.empty[Mod, Option[Version]]
     def localVersion(mod: Mod): Option[Version] = localVersions.getOrElseUpdate(mod, {
@@ -698,8 +700,8 @@ class PullRequester(repopath: File) {
 
     def updatedTo(cp: CpanPackage): BuildPerlPackageBlock =
       copy( builder               = if (cp.isModule) "buildPerlModule" else "buildPerlPackage"
-          , versionString         = cp.version.toString
-          , nameAndVersion        = s"${cp.name}-${cp.version}"
+          , versionString         = cp.version.toString stripPrefix "v"
+          , nameAndVersion        = s"${cp.name}-${cp.version.toString stripPrefix "v"}"
           , url                   = s"mirror://cpan/authors/id/${cp.path}"
           , sha256                = cp.sha256
           , doCheckOverride       = CpanErrata.doCheckOverride get cp.name
@@ -711,7 +713,6 @@ class PullRequester(repopath: File) {
     def this(cp: CpanPackage) = this {
       val sb = new java.lang.StringBuilder
       sb append s"""  ${cp.suggestedNixpkgsName} = ${if (cp.isModule) "buildPerlModule" else "buildPerlPackage"} rec {\n"""
-      sb append s"""     version = "${cp.version}";\n"""
       sb append s"""     name = "${cp.name}-${cp.version}";\n"""
       sb append s"""     src = fetchurl {\n"""
       sb append s"""       url = mirror://cpan/authors/id/${cp.path};\n"""
@@ -756,9 +757,7 @@ class PullRequester(repopath: File) {
   def nixifiedName(cp: CpanPackage) = buildPerlPackageBlocks.filter(_._2.name == cp.name).toList match {
     case Nil                                              => cp.suggestedNixpkgsName
     case (nixpkgsName, bppb)::Nil                         => nixpkgsName
-    case blocks if cp.name==Name("Archive-Zip")
-                && cp.version>=Version("1.53")
-                && blocks.exists(_._1=="ArchiveZip_1_53") => "ArchiveZip_1_53"
+    case blocks if cp.name==Name("Archive-Zip")           => "ArchiveZip"
     case blocks                                           => throw new RuntimeException(s"$cp can be one of ${blocks map (_._1)}")
   }
 
@@ -932,12 +931,16 @@ object Cpan2Nix {
     require(Process("git" :: "checkout"    :: "-f" :: "remotes/nixpkgs/staging"                   :: Nil, cwd = repopath).! == 0)
 //  require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/perl-packages-update-4"     :: Nil, cwd = repopath).! == 0)
     require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-1"                     :: Nil, cwd = repopath).! == 0) // Mime[Tt]ools https://github.com/NixOS/nixpkgs/pull/36655
-            Process("git" :: "cherry-pick"         :: "remotes/origin/perl-2"                     :: Nil, cwd = repopath).!
-            Process("git" :: "cherry-pick"         :: "remotes/origin/perl-3"                     :: Nil, cwd = repopath).!
-    require(Process("git" :: "cherry-pick"         :: "perl-4"                                    :: Nil, cwd = repopath).! == 0) // simplifications
-    require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-5"                     :: Nil, cwd = repopath).! == 0)
-    require(Process("git" :: "branch"      :: "-f" :: "perl-packages-update-3" :: "HEAD"          :: Nil, cwd = repopath).! == 0)
-    require(Process("git" :: "checkout"    ::         "perl-packages-update-3"                    :: Nil, cwd = repopath).! == 0)
+    println("CHERRY-PICK perl2")
+    require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-2"                     :: Nil, cwd = repopath).! != 0)
+    println("CHERRY-PICK perl3")
+    require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-3"                     :: Nil, cwd = repopath).! != 0)
+    println("CHERRY-PICK simplifications")
+    require(Process("git" :: "cherry-pick"         :: "a083a8fa29b8faf46d6b970bc72262d1936f5142"  :: Nil, cwd = repopath).! == 0) // simplifications
+    println("CHERRY-PICK perl5")
+    require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-5"                     :: Nil, cwd = repopath).! != 0)
+    require(Process("git" :: "branch"      :: "-f" :: "cpan-update-20180406" :: "HEAD"            :: Nil, cwd = repopath).! == 0)
+    require(Process("git" :: "checkout"    ::         "cpan-update-20180406"                      :: Nil, cwd = repopath).! == 0)
     val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
 
 
@@ -993,6 +996,9 @@ object Cpan2Nix {
 
     val pullRequester = new PullRequester(repopath)
 
+    val forceLocalBuild = true
+
+
     val toupdate = nixPkgs.allPackages sortBy { case np if np.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
                                                 case np if np.name.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
                                                 case np                                                => canUpgrade(np) match {
@@ -1001,10 +1007,9 @@ object Cpan2Nix {
                                                                                                           }
                                               }
 /*
-
-    val toupdate = nixPkgs.allPackages filter (_.name == Name("Task-FreecellSolver-Testing"))
+    val toupdate = nixPkgs.allPackages filter (_.name == Name("autovivification"))
 */
-
+//  var bigmessage = List.newBuilder[String]
     val totest = List.newBuilder[String]
 
     for (np      <- toupdate;
@@ -1015,10 +1020,13 @@ object Cpan2Nix {
 
       totest += pullRequester.nixifiedName(cp)
 
+//    bigmessage += s"[cpan2nix] $message"
       Process("git" :: "commit" :: "-m" :: s"[cpan2nix] $message" :: "pkgs/top-level/perl-packages.nix" :: Nil,
               cwd = repopath).!
     }
 
+//  Process("git" :: "commit" :: "-m" :: bigmessage.result.mkString("\n---\n") :: "pkgs/top-level/perl-packages.nix" :: Nil,
+//          cwd = repopath).!
 
     // try to build
     val nixcode = s"""|let
@@ -1031,9 +1039,16 @@ object Cpan2Nix {
                       |  ]
                       |""".stripMargin
     println(nixcode)
-    val forceLocalBuild = false
     val exitCode = Process("nix-build"
-                        :: (if (forceLocalBuild) "--builders"::""::Nil else "--keep-going"::Nil)
+                        :: (if (forceLocalBuild)
+                                 "--builders" :: ""
+                              :: "--option" :: "binary-caches" :: "http://nix-cache.s3.amazonaws.com/"
+                              :: Nil
+                            else
+                                 "--builders" :: "root@ifn2.dmz x86_64-linux /home/user/.ssh/id_ed25519 6 6 kvm,big-parallel"
+                              :: "--keep-going"
+                              :: Nil
+                           )
                        ::: "--show-trace"
                         :: "--keep-failed" :: "-E" :: nixcode :: Nil,
                            cwd = repopath,

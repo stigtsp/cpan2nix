@@ -18,7 +18,6 @@ import java.nio.file.{Paths, Files}
 import scala.sys.process._
 import scala.util.{Try, Failure, Success}
 import scala.collection.JavaConverters._
-import ms.webmaster.launcher.position._
 
 
 
@@ -502,20 +501,22 @@ object CpanErrata {
                                     ) withDefaultValue Map.empty
 
   // *** pinned packages
-  val pinnedPackages           = Set( CpanPackage fromPath "N/NJ/NJH/MusicBrainz-DiscID-0.03.tar.gz"           // need to review patchPhase manually
-//                                  , CpanPackage fromPath "P/PM/PMQS/Compress-Raw-Zlib-2.074.tar.gz"          // in external .nix file, need to update manually (in perl)
-                                    , CpanPackage fromPath "I/IS/ISHIGAKI/DBD-SQLite-1.56.tar.gz"              // in external .nix file, need to update manually
-                                    , CpanPackage fromPath "P/PM/PMQS/DB_File-1.831.tar.gz"                    // in external .nix file, need to update manually
-                                    , CpanPackage fromPath "L/LD/LDS/GD-2.53.tar.gz"                           // nixpkgs has .patch file incompatible with newer versions
-                                    , CpanPackage fromPath "D/DR/DROLSKY/MooseX-AttributeHelpers-0.23.tar.gz"  // nixpkgs has .patch file incompatible with newer versions
-                                    , CpanPackage fromPath "G/GA/GAAS/Unicode-String-2.09.tar.gz"              // nixpkgs has .patch file incompatible with newer versions
-                                    , CpanPackage fromPath "J/JH/JHI/Time-HiRes-1.9753.tar.gz"                 // 1.9753->1.9754 broke tests of Catalyst-Runtime
-                                    , CpanPackage fromPath "M/MA/MARKOV/MIME-Types-2.13.tar.gz"                // 2.13-~->2.17  broke tests of Catalyst
-                                    , CpanPackage fromPath "U/UM/UMEMOTO/Socket6-0.28.tar.gz"                  // 2018-03-08: broken on staging (ok on master)
-                                    , CpanPackage fromPath "A/AG/AGROLMS/GSSAPI-0.28.tar.gz"                   // 2018-03-08: broken on staging (ok on master)
-                                    , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"          // 2.15 seems broken
-                                    , CpanPackage fromPath "M/MA/MAKAMAKA/JSON-2.90.tar.gz"                    // 2.97xx test failed
-                                    , CpanPackage fromPath "R/RU/RURBAN/B-C-1.54.tar.gz"                       // 1.55: No rule to make target 'subdirs-test_dynamic', needed by 'test'
+  val pinnedPackages           = Set( CpanPackage fromPath "N/NJ/NJH/MusicBrainz-DiscID-0.03.tar.gz"                 // need to review patchPhase manually
+//                                  , CpanPackage fromPath "P/PM/PMQS/Compress-Raw-Zlib-2.074.tar.gz"                // in external .nix file, need to update manually (in perl)
+//                                  , CpanPackage fromPath "I/IS/ISHIGAKI/DBD-SQLite-1.56.tar.gz"                    // in external .nix file, need to update manually
+//                                  , CpanPackage fromPath "P/PM/PMQS/DB_File-1.831.tar.gz"                          // in external .nix file, need to update manually
+                                    , CpanPackage fromPath "L/LD/LDS/GD-2.53.tar.gz"                                 // nixpkgs has .patch file incompatible with newer versions
+                                    , CpanPackage fromPath "D/DR/DROLSKY/MooseX-AttributeHelpers-0.23.tar.gz"        // nixpkgs has .patch file incompatible with newer versions
+                                    , CpanPackage fromPath "G/GA/GAAS/Unicode-String-2.09.tar.gz"                    // nixpkgs has .patch file incompatible with newer versions
+                                    , CpanPackage fromPath "J/JH/JHI/Time-HiRes-1.9753.tar.gz"                       // 1.9753->1.9754 broke tests of Catalyst-Runtime
+                                    , CpanPackage fromPath "M/MA/MARKOV/MIME-Types-2.13.tar.gz"                      // 2.13-~->2.17  broke tests of Catalyst
+//                                  , CpanPackage fromPath "U/UM/UMEMOTO/Socket6-0.28.tar.gz"                        // 2018-03-08: broken on staging (ok on master)
+//                                  , CpanPackage fromPath "A/AG/AGROLMS/GSSAPI-0.28.tar.gz"                         // 2018-03-08: broken on staging (ok on master)
+                                    , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"                // 2.15 seems broken
+                                    , CpanPackage fromPath "M/MA/MAKAMAKA/JSON-2.90.tar.gz"                          // 2.97xx test failed
+                                    , CpanPackage fromPath "R/RU/RURBAN/B-C-1.54.tar.gz"                             // 1.55: No rule to make target 'subdirs-test_dynamic', needed by 'test'
+                                    , CpanPackage fromPath "N/NI/NIGELM/Catalyst-Controller-HTML-FormFu-2.02.tar.gz" // 2.04 test failed
+                                    , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11 test failed
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -563,8 +564,8 @@ object Cpan {
 
 
   def downloadFile(path: String): Option[File] = {
-    val localfilename     = new File(s"${__DIR__}/spool/${Paths.get(path).getFileName}")
-    val localfilename_tmp = new File(s"${__DIR__}/spool/${Paths.get(path).getFileName}.tmp")
+    val localfilename     = new File(s"./spool/${Paths.get(path).getFileName}")
+    val localfilename_tmp = new File(s"./spool/${Paths.get(path).getFileName}.tmp")
     val err404witness     = new File(localfilename.getPath+".err404witness")
     if (localfilename.exists) {
       Some(localfilename)
@@ -917,145 +918,137 @@ class PullRequester(repopath: File) {
 
 object Cpan2Nix {
   def main(args: Array[String]) {
+    args match {
+      case Array()                   => main(Array("--repopath", "./nixpkgs-repo"))
+      case Array("--repopath", path) =>
+        val repopath: File = new File(path)
+        if (!repopath.exists) {
+          require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
+        } else {
+          require(Process("git" :: "fetch" :: "origin" :: Nil, cwd = repopath).! == 0)
+        }
 
-    val repopath: File = args.toList match {
-                           case List(a) => new File(a)
-                           case _       => System.err.println("Usage: script path-to-nix-pkgs-repo"); sys.exit(1)
-                         }
+        val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
+        require(Process("git" :: "checkout"    ::         "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
+        require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
+        require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
 
+        val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
 
-//  val nixPkgs = new NixPkgs("https://github.com/NixOS/nixpkgs/archive/staging.tar.gz")
+//      val nixPkgs = new NixPkgs("https://github.com/NixOS/nixpkgs/archive/staging.tar.gz")
 
-    require(Process("git" :: "fetch"       ::         "nixpkgs"                                   :: Nil, cwd = repopath).! == 0)
-    require(Process("git" :: "fetch"       ::         "origin"                                    :: Nil, cwd = repopath).! == 0)
-    require(Process("git" :: "checkout"    :: "-f" :: "remotes/nixpkgs/staging"                   :: Nil, cwd = repopath).! == 0)
-//  require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/perl-packages-update-4"     :: Nil, cwd = repopath).! == 0)
-    require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-1"                     :: Nil, cwd = repopath).! == 0) // Mime[Tt]ools https://github.com/NixOS/nixpkgs/pull/36655
-    println("CHERRY-PICK perl2")
-    require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-2"                     :: Nil, cwd = repopath).! != 0)
-    println("CHERRY-PICK perl3")
-    require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-3"                     :: Nil, cwd = repopath).! != 0)
-    println("CHERRY-PICK simplifications")
-    require(Process("git" :: "cherry-pick"         :: "a083a8fa29b8faf46d6b970bc72262d1936f5142"  :: Nil, cwd = repopath).! == 0) // simplifications
-    println("CHERRY-PICK perl5")
-    require(Process("git" :: "cherry-pick"         :: "remotes/origin/perl-5"                     :: Nil, cwd = repopath).! != 0)
-    require(Process("git" :: "branch"      :: "-f" :: "cpan-update-20180406" :: "HEAD"            :: Nil, cwd = repopath).! == 0)
-    require(Process("git" :: "checkout"    ::         "cpan-update-20180406"                      :: Nil, cwd = repopath).! == 0)
-    val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
-
-
-    val canUpgradeMemo = collection.mutable.Map.empty[NixPackage, Option[CpanPackage]]
-    def canUpgrade(np: NixPackage): Option[CpanPackage] = canUpgradeMemo.getOrElseUpdate(np, {
-      CpanErrata.namesToIgnore.get(np.name) match {
-        case Some(pred) if pred(np.version) =>
-          None
-        case _ =>
-          CpanErrata.pinnedPackages find (_.name == np.name) orElse {
-            np.maybeauthor match {
-              case Some(author) =>
-                Cpan.byAuthorAndName(author->np.name) match {
-                  case cpps if cpps.isEmpty                         =>
-                    Cpan.byName(np.name) match {
-                      case cpps if cpps.isEmpty                          => val mod = Mod(np.name.toString.replace("-", "::")) // try to understand as module name
-                                                                            Cpan.byMod(mod).toList match {
-                                                                              case cp::Nil => System.err.println(f"${np.url}%-90s not found in CPAN; but there is $mod in $cp");
-                                                                                              None // Some(cp)
-                                                                              case _       => System.err.println(f"${np.url}%-90s not found in CPAN");
-                                                                                              None
-                                                                            }
-                      case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
-                      case cpps if cpps forall (_.version < np.version)  => System.err.println(f"${np.url}%-90s not found in CPAN; there are only ${cpps.toArray mkString ", "}")
-                                                                            Some(cpps.maxBy(_.version))
+        val canUpgradeMemo = collection.mutable.Map.empty[NixPackage, Option[CpanPackage]]
+        def canUpgrade(np: NixPackage): Option[CpanPackage] = canUpgradeMemo.getOrElseUpdate(np, {
+          CpanErrata.namesToIgnore.get(np.name) match {
+            case Some(pred) if pred(np.version) =>
+              None
+            case _ =>
+              CpanErrata.pinnedPackages find (_.name == np.name) orElse {
+                np.maybeauthor match {
+                  case Some(author) =>
+                    Cpan.byAuthorAndName(author->np.name) match {
+                      case cpps if cpps.isEmpty                         =>
+                        Cpan.byName(np.name) match {
+                          case cpps if cpps.isEmpty                          => val mod = Mod(np.name.toString.replace("-", "::")) // try to understand as module name
+                                                                                Cpan.byMod(mod).toList match {
+                                                                                  case cp::Nil => System.err.println(f"${np.url}%-90s not found in CPAN; but there is $mod in $cp");
+                                                                                                  None // Some(cp)
+                                                                                  case _       => System.err.println(f"${np.url}%-90s not found in CPAN");
+                                                                                                  None
+                                                                                }
+                          case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
+                          case cpps if cpps forall (_.version < np.version)  => System.err.println(f"${np.url}%-90s not found in CPAN; there are only ${cpps.toArray mkString ", "}")
+                                                                                Some(cpps.maxBy(_.version))
+                        }
+                      case cpps if cpps exists (np.version < _.version) =>
+                        Some(cpps.maxBy(_.version))
+                      case cpps if cpps exists (np.version == _.version)=>
+                        Cpan.byName(np.name) match {
+                          case cpps if cpps exists (np.version < _.version) => System.err.println(f"${np.url}%-90s other authors have newer versions ${cpps.filter(np.version < _.version).groupBy(_.author.toString).mapValues(_.map(_.version).toList.sorted) mkString ", "}")
+                                                                               Some(cpps.maxBy(_.version))
+                          case _                                            => Some(cpps.find(_.version == np.version).get)
+                        }
+                      case cpps if cpps forall (_.version < np.version) =>
+                        Cpan.byName(np.name) match {
+                          case cpps if cpps exists (np.version < _.version) => Some(cpps.maxBy(_.version))
+                          case _                                            => System.err.println(f"${np.url}%-90s version not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
+                                                                               Some(cpps.maxBy(_.version))
+                        }
                     }
-                  case cpps if cpps exists (np.version < _.version) =>
-                    Some(cpps.maxBy(_.version))
-                  case cpps if cpps exists (np.version == _.version)=>
+                  case None => // author is not specified in nixpkgs
                     Cpan.byName(np.name) match {
-                      case cpps if cpps exists (np.version < _.version) => System.err.println(f"${np.url}%-90s other authors have newer versions ${cpps.filter(np.version < _.version).groupBy(_.author.toString).mapValues(_.map(_.version).toList.sorted) mkString ", "}")
-                                                                           Some(cpps.maxBy(_.version))
-                      case _                                            => Some(cpps.find(_.version == np.version).get)
-                    }
-                  case cpps if cpps forall (_.version < np.version) =>
-                    Cpan.byName(np.name) match {
-                      case cpps if cpps exists (np.version < _.version) => Some(cpps.maxBy(_.version))
-                      case _                                            => System.err.println(f"${np.url}%-90s version not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
-                                                                           Some(cpps.maxBy(_.version))
-                    }
+                     case cpps if cpps.isEmpty                          => throw new RuntimeException(s"${np.url} not found in CPAN")
+                     case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
+                     case cpps if cpps forall (_.version < np.version)  => throw new RuntimeException(s"${np.url} not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
+                   }
                 }
-              case None => // author is not specified in nixpkgs
-                Cpan.byName(np.name) match {
-                 case cpps if cpps.isEmpty                          => throw new RuntimeException(s"${np.url} not found in CPAN")
-                 case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
-                 case cpps if cpps forall (_.version < np.version)  => throw new RuntimeException(s"${np.url} not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
-               }
-            }
+              }
           }
-      }
-    })
+        })
 
 
-    val pullRequester = new PullRequester(repopath)
+        val pullRequester = new PullRequester(repopath)
 
-    val forceLocalBuild = true
+        val forceLocalBuild = true
 
 
-    val toupdate = nixPkgs.allPackages sortBy { case np if np.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
-                                                case np if np.name.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
-                                                case np                                                => canUpgrade(np) match {
-                                                                                                            case Some(cp) => (10, pullRequester.allDeps(cp).size)  // then smaller first
-                                                                                                            case None     => (20, 0)
-                                                                                                          }
-                                              }
+        val toupdate = nixPkgs.allPackages sortBy { case np if np.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
+                                                    case np if np.name.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
+                                                    case np                                                => canUpgrade(np) match {
+                                                                                                                case Some(cp) => (10, pullRequester.allDeps(cp).size)  // then smaller first
+                                                                                                                case None     => (20, 0)
+                                                                                                              }
+                                                  }
 /*
-    val toupdate = nixPkgs.allPackages filter (_.name == Name("autovivification"))
+        val toupdate = nixPkgs.allPackages filter (_.name == Name("autovivification"))
 */
-//  var bigmessage = List.newBuilder[String]
-    val totest = List.newBuilder[String]
 
-    for (np      <- toupdate;
-         cp      <- canUpgrade(np);
-         message <- pullRequester.prepareCommit(np, cp)) {
-      println("----")
-      println(message)
+        val totest = List.newBuilder[String]
 
-      totest += pullRequester.nixifiedName(cp)
+        for (np      <- toupdate;
+             cp      <- canUpgrade(np);
+             message <- pullRequester.prepareCommit(np, cp)) {
+          println("----")
+          println(message)
 
-//    bigmessage += s"[cpan2nix] $message"
-      Process("git" :: "commit" :: "-m" :: s"[cpan2nix] $message" :: "pkgs/top-level/perl-packages.nix" :: Nil,
-              cwd = repopath).!
+          totest += pullRequester.nixifiedName(cp)
+
+          Process("git" :: "commit" :: "-m" :: s"[cpan2nix] $message" :: "pkgs/top-level/perl-packages.nix" :: Nil,
+                  cwd = repopath).!
+        }
+
+
+        // try to build
+        val nixcode = s"""|let
+                          |  pkgs = import <nixpkgs> { };
+                          |in
+                          |  [
+                          |    ${totest.result flatMap (npname => List( s"pkgs.perlPackages.${npname}"
+                                                                  // , s"pkgs.pkgsi686Linux.perlPackages.${npname}"
+                                                                      )) mkString "\n    "}
+                          |  ]
+                          |""".stripMargin
+        println(nixcode)
+        val exitCode = Process("nix-build"
+                            :: (if (forceLocalBuild)
+                                     "--builders" :: ""
+                                  :: "--option" :: "binary-caches" :: "http://nix-cache.s3.amazonaws.com/"
+                                  :: Nil
+                                else
+                                     "--builders" :: "root@ifn2.dmz x86_64-linux /home/user/.ssh/id_ed25519 6 6 kvm,big-parallel"
+                                  :: "--keep-going"
+                                  :: Nil
+                               )
+                           ::: "--show-trace"
+                            :: "--keep-failed" :: "-E" :: nixcode :: Nil,
+                               cwd = repopath,
+                               "NIXPKGS_CONFIG" -> "",
+                               "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
+                               ).!
+        require(exitCode == 0)
+
+      case _ =>
+        println(s"unexpected args: ${args.toList}")
     }
-
-//  Process("git" :: "commit" :: "-m" :: bigmessage.result.mkString("\n---\n") :: "pkgs/top-level/perl-packages.nix" :: Nil,
-//          cwd = repopath).!
-
-    // try to build
-    val nixcode = s"""|let
-                      |  pkgs = import <nixpkgs> { };
-                      |in
-                      |  [
-                      |    ${totest.result flatMap (npname => List( s"pkgs.perlPackages.${npname}"
-                                                              // , s"pkgs.pkgsi686Linux.perlPackages.${npname}"
-                                                                  )) mkString "\n    "}
-                      |  ]
-                      |""".stripMargin
-    println(nixcode)
-    val exitCode = Process("nix-build"
-                        :: (if (forceLocalBuild)
-                                 "--builders" :: ""
-                              :: "--option" :: "binary-caches" :: "http://nix-cache.s3.amazonaws.com/"
-                              :: Nil
-                            else
-                                 "--builders" :: "root@ifn2.dmz x86_64-linux /home/user/.ssh/id_ed25519 6 6 kvm,big-parallel"
-                              :: "--keep-going"
-                              :: Nil
-                           )
-                       ::: "--show-trace"
-                        :: "--keep-failed" :: "-E" :: nixcode :: Nil,
-                           cwd = repopath,
-                           "NIXPKGS_CONFIG" -> "",
-                           "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
-                           ).!
-    require(exitCode == 0)
-
   }
 }

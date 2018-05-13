@@ -898,14 +898,14 @@ class PullRequester(repopath: File) {
             }
 
           case Right(bppb) => // insert new dep
-            message ::= s"perlPackages.${bppb.nixpkgsName}: init at ${bppb.version}"
-
             buildPerlPackageBlocks += bppb.nixpkgsName -> bppb
             val after = (buildPerlPackageBlocks.until(bppb.nixpkgsName).lastOption getOrElse buildPerlPackageBlocks.last)._2
             if (CpanErrata.inExternalNixFiles contains bppb.name) {
               //`perl-packages.nix` = `perl-packages.nix`.replace(after.source.trim, after.source.trim+"\n/*\n  "+bppb.source.trim+"\n*/")
+              //message ::= s"perlPackages.${bppb.nixpkgsName}: init at ${bppb.version}"
             } else {
               `perl-packages.nix` = `perl-packages.nix`.replace(after.source.trim, after.source.trim+"\n\n  "+bppb.source.trim)
+              message ::= s"perlPackages.${bppb.nixpkgsName}: init at ${bppb.version}"
             }
         }
 

@@ -525,6 +525,7 @@ object CpanErrata {
                                     , CpanPackage fromPath "R/RU/RURBAN/B-C-1.54.tar.gz"                             // 1.55: No rule to make target 'subdirs-test_dynamic', needed by 'test'
                                     , CpanPackage fromPath "N/NI/NIGELM/Catalyst-Controller-HTML-FormFu-2.02.tar.gz" // 2.04 test failed
                                     , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11 test failed
+                                    , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -925,6 +926,8 @@ class PullRequester(repopath: File) {
 
 
 object Cpan2Nix {
+  val forceLocalBuild = true
+
   def main(args: Array[String]) {
     args match {
       case Array()                   => main(Array("--repopath", "./nixpkgs-repo"))
@@ -937,7 +940,7 @@ object Cpan2Nix {
         }
 
         val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
-        require(Process("git" :: "checkout"    ::         "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
+        require(Process("git" :: "checkout"    ::         "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
         require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
         require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
 
@@ -997,8 +1000,6 @@ object Cpan2Nix {
 
         val pullRequester = new PullRequester(repopath)
 
-        val forceLocalBuild = true
-
 
         val toupdate = nixPkgs.allPackages sortBy { case np if np.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
                                                     case np if np.name.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
@@ -1008,7 +1009,7 @@ object Cpan2Nix {
                                                                                                               }
                                                   }
 /*
-        val toupdate = nixPkgs.allPackages filter (_.name == Name("autovivification"))
+        val toupdate = nixPkgs.allPackages filter (_.name == Name("VM-EC2-Security-CredentialCache"))
 */
 
         val totest = List.newBuilder[String]

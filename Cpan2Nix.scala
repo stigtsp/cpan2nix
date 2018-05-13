@@ -299,22 +299,30 @@ object CpanErrata {
   private[this] val exception1  = "(PerlMagick)-([0-9.]+-[0-9.]+)".r
   private[this] val suspicious1 = "([^/]+)-[0-9.]+-([0-9.]+)".r
   private[this] val rule1       = "([^/]+)-([^/-]+)".r
+  private[this] val badversion1 = "([A-Z][^/_-]*)_([^/-]+)".r // fix for strings like "App-NetdiscoX-Web-Plugin-GraphLinkSwitch_0.1" or "PDF-EasyPDF_0_04"
   private[this] val rule2       = "([^/-]+)_([^_/-]+)".r
+  private[this] val badversion2 = "([a-zA-Z]+)".r             // fix for strings "Ipv4_networks" or "article_fetcher"
   private[this] val rule3       = "([^_/-]+)\\.([^\\._/-]+)".r
   private[this] val rule4       = "([^\\._/-]+)".r
 //private[this] val rule3       = "([^_/-]+)".r
   private[this] val nvcache = collection.mutable.Map.empty[String, (Name, Version)] // to avoid flooding same warnings
-  def parseNameVersion(s: String): (Name, Version) = nvcache.getOrElseUpdate(s, s match {
-    case "Data-Dumper-Lazy"                 => (Name(s),                                 Version(""))
-    case "Spreadsheet-ParseExcel-Assist"    => (Name(s),                                 Version(""))
-    case "Spreadsheet-WriteExcel-WebPivot2" => (Name("Spreadsheet-WriteExcel-WebPivot"), Version("2"))
-    case exception1 (n, v)                  => (Name(n),                                 Version(v))
-    case suspicious1(n, v)                  => System.err.println(s"version of `$s` might be detected incorrectly as `$v`")
-                                               (Name(n),                                 Version(v))
-    case rule1      (n, v)                  => (Name(n),                                 Version(v))
-    case rule2      (n, v)                  => (Name(n),                                 Version(v))
-    case rule3      (n, v)                  => (Name(n),                                 Version(v))
-    case rule4      (n)                     => (Name(n),                                 Version(""))
+  def parseNameVersion(s: String): (Name, Version) = nvcache.getOrElseUpdate(s, {
+    val (n, v) = s match {
+      case "Data-Dumper-Lazy"                 => (Name(s),                                 Version(""))
+      case "Spreadsheet-ParseExcel-Assist"    => (Name(s),                                 Version(""))
+      case "Spreadsheet-WriteExcel-WebPivot2" => (Name("Spreadsheet-WriteExcel-WebPivot"), Version("2"))
+      case exception1 (n, v)                  => (Name(n),                                 Version(v))
+      case suspicious1(n, v)                  => System.err.println(s"version of `$s` might be detected incorrectly as `$v`")
+                                                 (Name(n),                                 Version(v))
+      case rule1      (n, badversion1(n2, v)) => (Name(n+"-"+n2),                          Version(v))
+      case rule1      (n, v)                  => (Name(n),                                 Version(v))
+      case rule2      (n, badversion2(n2))    => (Name(n+"_"+n2),                          Version(""))
+      case rule2      (n, v)                  => (Name(n),                                 Version(v))
+      case rule3      (n, v)                  => (Name(n),                                 Version(v))
+      case rule4      (n)                     => (Name(n),                                 Version(""))
+    }
+//  println(f"$s%-60s -> $n%-60s $v")
+    (n, v)
   })
 
   // *** modules and packages to ignore
@@ -618,7 +626,7 @@ class PullRequester(repopath: File) {
                             , cwd = None
                             , "PERL5LIB" -> s"$theOldestSupportedPerl/lib/perl5/site_perl"
                             ).!!.trim).toOption map (Version(_))
-      println(s"local $mod = $lv")
+//    println(s"local $mod = $lv")
       lv
     })
   }

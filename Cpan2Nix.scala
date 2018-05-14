@@ -370,116 +370,117 @@ object CpanErrata {
 
 
   // *** add to nixpkgs dependencies missing on cpan (usually due to missing .meta file; FIXME: look into Makefile.PL then)
-  val extraBuildDependencies   = Map( Name("Autodia"                                 ) -> Map( Mod("DBI")                          -> Version("0"))
-                                    , Name("Array-FIFO"                              ) -> Map( Mod("Test::Trap")                   -> Version("0"),
-                                                                                               Mod("Test::Deep::NoTest")           -> Version("0"))
-                                    , Name("Catalyst-Controller-POD"                 ) -> Map( Mod("inc::Module::Install")         -> Version("0"))
-                                    , Name("Catalyst-Runtime"                        ) -> Map( Mod("Type::Tiny")                   -> Version("0"))
-                                    , Name("Catalyst-Authentication-Store-DBIx-Class") -> Map( Mod("Test::Warn")                   -> Version("0"))
-                                    , Name("Catalyst-Authentication-Store-Htpasswd"  ) -> Map( Mod("Test::WWW::Mechanize")         -> Version("0")
-                                                                                             , Mod("Test::LongString")             -> Version("0"))
-                                    , Name("Catalyst-Controller-HTML-FormFu"         ) -> Map( Mod("Test::LongString")             -> Version("0"))
-                                    , Name("Catalyst-Controller-POD"                 ) -> Map( Mod("Test::WWW::Mechanize")         -> Version("0")
-                                                                                             , Mod("Test::LongString")             -> Version("0")
-                                                                                             , Mod("inc::Module::Install")         -> Version("0"))
-                                    , Name("Catalyst-Plugin-Cache-HTTP"              ) -> Map( Mod("Test::WWW::Mechanize")         -> Version("0")
-                                                                                             , Mod("Test::LongString")             -> Version("0"))
-                                    , Name("Catalyst-View-Download"                  ) -> Map( Mod("Test::WWW::Mechanize")         -> Version("0")
-                                                                                             , Mod("Test::LongString")             -> Version("0"))
-                                    , Name("Code-TidyAll"                            ) -> Map( Mod("Test::Class")                  -> Version("0")
-                                                                                             , Mod("Test::Deep")                   -> Version("0")
-                                                                                             , Mod("Test::Exception")              -> Version("0")
-                                                                                             , Mod("Test::Most")                   -> Version("0")
-                                                                                             , Mod("Test::Warn")                   -> Version("0"))
-                                    , Name("Corona"                                  ) -> Map( Mod("Test::SharedFork")             -> Version("0")
-                                                                                             , Mod("Test::TCP")                    -> Version("0"))
-                                    , Name("CPAN"                                    ) -> Map( Mod("Archive::Zip")                 -> Version("0"))
-                                    , Name("Data-FormValidator"                      ) -> Map( Mod("CGI")                          -> Version("0"))
-                                    , Name("Data-Page-Pageset"                       ) -> Map( Mod("Class::Accessor")              -> Version("0")
-                                                                                             , Mod("Data::Page")                   -> Version("0")
-                                                                                             , Mod("Test::Exception")              -> Version("0"))
-                                    , Name("Data-Taxi"                               ) -> Map( Mod("Debug::ShowStuff")             -> Version("0"))
-                                    , Name("DateTime-Calendar-Julian"                ) -> Map( Mod("DateTime")                     -> Version("0"))
-                                    , Name("DBIx-Introspector"                       ) -> Map( Mod("Test::Fatal")                  -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-CheckChangeLog"        ) -> Map( Mod("Test::Deep")                   -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-ReadmeAnyFromPod"      ) -> Map( Mod("Test::SharedFork")             -> Version("0")
-                                                                                             , Mod("Test::Differences")            -> Version("0")
-                                                                                             , Mod("Test::Exception")              -> Version("0")
-                                                                                             , Mod("Test::Warn")                   -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-ReadmeMarkdownFromPod" ) -> Map( Mod("Test::Deep")                   -> Version("0")
-                                                                                             , Mod("Test::Differences")            -> Version("0")
-                                                                                             , Mod("Test::Exception")              -> Version("0")
-                                                                                             , Mod("Test::Warn")                   -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-Test-CPAN-Changes"     ) -> Map( Mod("Test::Deep")                   -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-Test-CPAN-Meta-JSON"   ) -> Map( Mod("Test::Deep")                   -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-Test-DistManifest"     ) -> Map( Mod("Test::Deep")                   -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-Test-MinimumVersion"   ) -> Map( Mod("Test::Deep")                   -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-Test-Perl-Critic"      ) -> Map( Mod("Test::Deep")                   -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-Test-Synopsis"         ) -> Map( Mod("Test::Deep")                   -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-Test-UnusedVars"       ) -> Map( Mod("Test::Deep")                   -> Version("0"))
-                                    , Name("Dist-Zilla-Plugin-Test-Version"          ) -> Map( Mod("Test::Deep")                   -> Version("0"))
-                                    , Name("Font-TTF"                                ) -> Map( Mod("IO::String")                   -> Version("0"))
-                                    , Name("FormValidator-Simple"                    ) -> Map( Mod("CGI")                          -> Version("0"))
-                                    , Name("Gnome2-Canvas"                           ) -> Map( Mod("ExtUtils::Depends")            -> Version("0"))
-                                    , Name("Gnome2-Canvas"                           ) -> Map( Mod("ExtUtils::PkgConfig")          -> Version("0")
-                                                                                             , Mod("ExtUtils::Depends")            -> Version("0"))
-                                    , Name("Gtk2-TrayIcon"                           ) -> Map( Mod("ExtUtils::PkgConfig")          -> Version("0")
-                                                                                             , Mod("ExtUtils::Depends")            -> Version("0")
-                                                                                             , Mod("Glib::CodeGen")                -> Version("0"))
-                                    , Name("Gtk2-Unique"                             ) -> Map( Mod("Glib::CodeGen")                -> Version("0"))
-                                    , Name("Hash-Merge-Simple"                       ) -> Map( Mod("Test::Deep")                   -> Version("0")
-                                                                                             , Mod("Test::Warn")                   -> Version("0")
-                                                                                             , Mod("Test::Exception")              -> Version("0")
-                                                                                             , Mod("Test::Differences")            -> Version("0"))
-                                    , Name("HTML-Selector-XPath"                     ) -> Map( Mod("Test::Base")                   -> Version("0"))
-                                    , Name("HTML-Tidy"                               ) -> Map( Mod("Test::Exception")              -> Version("0"))
-                                    , Name("HTTP-Response-Encoding"                  ) -> Map( Mod("LWP::UserAgent")               -> Version("0"))
-                                    , Name("IO-Socket-Timeout"                       ) -> Map( Mod("Test::SharedFork")             -> Version("0"))
-                                    , Name("Module-Build-Pluggable-PPPort"           ) -> Map( Mod("Test::SharedFork")             -> Version("0"))
-                                    , Name("Module-Info"                             ) -> Map( Mod("Test::Pod")                    -> Version("0")
-                                                                                             , Mod("Test::Pod::Coverage")          -> Version("0"))
-                                    , Name("MooseX-Has-Options"                      ) -> Map( Mod("Test::Deep")                   -> Version("0"),
-                                                                                               Mod("Test::Differences")            -> Version("0"),
-                                                                                               Mod("Test::Exception")              -> Version("0"),
-                                                                                               Mod("Test::Warn")                   -> Version("0"))
-                                    , Name("PerlIO-via-symlink"                      ) -> Map( Mod("inc::Module::Install")         -> Version("0"))
-                                    , Name("PerlIO-via-Timeout"                      ) -> Map( Mod("Test::SharedFork")             -> Version("0"))
-                                    , Name("Plack"                                   ) -> Map( Mod("Test::SharedFork")             -> Version("0"))
-                                    , Name("Plack-App-Proxy"                         ) -> Map( Mod("Test::SharedFork")             -> Version("0"))
-                                    , Name("Plack-Test-ExternalServer"               ) -> Map( Mod("Test::SharedFork")             -> Version("0"))
-                                    , Name("Plack-Middleware-Auth-Digest"            ) -> Map( Mod("Test::SharedFork")             -> Version("0")
-                                                                                             , Mod("Test::TCP")                    -> Version("0"))
-                                    , Name("Plack-Middleware-Deflater"               ) -> Map( Mod("Test::SharedFork")             -> Version("0")
-                                                                                             , Mod("Test::TCP")                    -> Version("0"))
-                                    , Name("Plack-Middleware-Session"                ) -> Map( Mod("Test::SharedFork")             -> Version("0")
-                                                                                             , Mod("Test::TCP")                    -> Version("0"))
-                                    , Name("Protocol-HTTP2"                          ) -> Map( Mod("Test::SharedFork")             -> Version("0"))
-                                    , Name("REST-Utils"                              ) -> Map( Mod("Test::LongString")             -> Version("0")
-                                                                                             , Mod("Test::WWW::Mechanize")         -> Version("0"))
-                                    , Name("RT-Client-REST"                          ) -> Map( Mod("CGI")                          -> Version("0")
-                                                                                             , Mod("DateTime")                     -> Version("0")
-                                                                                             , Mod("DateTime::Format::DateParse")  -> Version("0")
-                                                                                             , Mod("Error")                        -> Version("0")
-                                                                                             , Mod("Exception::Class")             -> Version("0")
-                                                                                             , Mod("HTTP::Cookies")                -> Version("0")
-                                                                                             , Mod("LWP::UserAgent")               -> Version("0")
-                                                                                             , Mod("Params::Validate")             -> Version("0")
-                                                                                             , Mod("Test::Exception")              -> Version("0"))
-                                    , Name("Starlet"                                 ) -> Map( Mod("Test::SharedFork")             -> Version("0"))
-                                    , Name("Task-Plack"                              ) -> Map( Mod("Test::SharedFork")             -> Version("0"))
-                                    , Name("Task-FreecellSolver-Testing"             ) -> Map( Mod("Test::Trap")                   -> Version("0"))
-                                    , Name("Term-ProgressBar-Simple"                 ) -> Map( Mod("Test::MockObject")             -> Version("0"))
-                                    , Name("Test-Class-Most"                         ) -> Map( Mod("Test::Differences")            -> Version("0")
-                                                                                             , Mod("Test::Deep")                   -> Version("0")
-                                                                                             , Mod("Test::Exception")              -> Version("0")
-                                                                                             , Mod("Test::Warn")                   -> Version("0"))
-                                    , Name("Test-Run-Plugin-ColorFileVerdicts"       ) -> Map( Mod("Test::Trap")                   -> Version("0"))
-                                    , Name("Test-Run-Plugin-ColorSummary"            ) -> Map( Mod("Test::Trap")                   -> Version("0"))
-                                    , Name("Test-WWW-Mechanize"                      ) -> Map( Mod("Test::LongString")             -> Version("0") )
-                                    , Name("Test-WWW-Mechanize-CGI"                  ) -> Map( Mod("Test::LongString")             -> Version("0"))
-                                    , Name("Test-WWW-Mechanize-PSGI"                 ) -> Map( Mod("Test::LongString")             -> Version("0"))
-                                    , Name("Twiggy"                                  ) -> Map( Mod("Test::SharedFork")             -> Version("0"))
-                                    , Name("YAML"                                    ) -> Map( Mod("Test::Base")                   -> Version("0"))
+  val extraBuildDependencies   = Map( Name("Autodia"                                 ) -> Map( Mod("DBI")                              -> Version("0"))
+                                    , Name("Array-FIFO"                              ) -> Map( Mod("Test::Trap")                       -> Version("0"),
+                                                                                               Mod("Test::Deep::NoTest")               -> Version("0"))
+                                    , Name("Catalyst-Controller-POD"                 ) -> Map( Mod("inc::Module::Install")             -> Version("0"))
+                                    , Name("Catalyst-Runtime"                        ) -> Map( Mod("Type::Tiny")                       -> Version("0"))
+                                    , Name("Catalyst-Authentication-Store-DBIx-Class") -> Map( Mod("Test::Warn")                       -> Version("0"))
+                                    , Name("Catalyst-Authentication-Store-Htpasswd"  ) -> Map( Mod("Test::WWW::Mechanize")             -> Version("0")
+                                                                                             , Mod("Test::LongString")                 -> Version("0"))
+                                    , Name("Catalyst-Controller-HTML-FormFu"         ) -> Map( Mod("Test::LongString")                 -> Version("0"))
+                                    , Name("Catalyst-Controller-POD"                 ) -> Map( Mod("Test::WWW::Mechanize")             -> Version("0")
+                                                                                             , Mod("Test::LongString")                 -> Version("0")
+                                                                                             , Mod("inc::Module::Install")             -> Version("0"))
+                                    , Name("Catalyst-Plugin-Cache"                   ) -> Map( Mod("Class::Accessor")                  -> Version("0"))
+                                    , Name("Catalyst-Plugin-Cache-HTTP"              ) -> Map( Mod("Test::WWW::Mechanize")             -> Version("0")
+                                                                                             , Mod("Test::LongString")                 -> Version("0"))
+                                    , Name("Catalyst-View-Download"                  ) -> Map( Mod("Test::WWW::Mechanize")             -> Version("0")
+                                                                                             , Mod("Test::LongString")                 -> Version("0"))
+                                    , Name("Code-TidyAll"                            ) -> Map( Mod("Test::Class")                      -> Version("0")
+                                                                                             , Mod("Test::Deep")                       -> Version("0")
+                                                                                             , Mod("Test::Exception")                  -> Version("0")
+                                                                                             , Mod("Test::Most")                       -> Version("0")
+                                                                                             , Mod("Test::Warn")                       -> Version("0"))
+                                    , Name("Corona"                                  ) -> Map( Mod("Test::SharedFork")                 -> Version("0")
+                                                                                             , Mod("Test::TCP")                        -> Version("0"))
+                                    , Name("CPAN"                                    ) -> Map( Mod("Archive::Zip")                     -> Version("0"))
+                                    , Name("Data-FormValidator"                      ) -> Map( Mod("CGI")                              -> Version("0"))
+                                    , Name("Data-Page-Pageset"                       ) -> Map( Mod("Class::Accessor")                  -> Version("0")
+                                                                                             , Mod("Data::Page")                       -> Version("0")
+                                                                                             , Mod("Test::Exception")                  -> Version("0"))
+                                    , Name("Data-Taxi"                               ) -> Map( Mod("Debug::ShowStuff")                 -> Version("0"))
+                                    , Name("DateTime-Calendar-Julian"                ) -> Map( Mod("DateTime")                         -> Version("0"))
+                                    , Name("DBIx-Introspector"                       ) -> Map( Mod("Test::Fatal")                      -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-CheckChangeLog"        ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-ReadmeAnyFromPod"      ) -> Map( Mod("Test::SharedFork")                 -> Version("0")
+                                                                                             , Mod("Test::Differences")                -> Version("0")
+                                                                                             , Mod("Test::Exception")                  -> Version("0")
+                                                                                             , Mod("Test::Warn")                       -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-ReadmeMarkdownFromPod" ) -> Map( Mod("Test::Deep")                       -> Version("0")
+                                                                                             , Mod("Test::Differences")                -> Version("0")
+                                                                                             , Mod("Test::Exception")                  -> Version("0")
+                                                                                             , Mod("Test::Warn")                       -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-Test-CPAN-Changes"     ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-Test-CPAN-Meta-JSON"   ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-Test-DistManifest"     ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-Test-MinimumVersion"   ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-Test-Perl-Critic"      ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-Test-Synopsis"         ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-Test-UnusedVars"       ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Dist-Zilla-Plugin-Test-Version"          ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Font-TTF"                                ) -> Map( Mod("IO::String")                       -> Version("0"))
+                                    , Name("FormValidator-Simple"                    ) -> Map( Mod("CGI")                              -> Version("0"))
+                                    , Name("Gnome2-Canvas"                           ) -> Map( Mod("ExtUtils::Depends")                -> Version("0"))
+                                    , Name("Gnome2-Canvas"                           ) -> Map( Mod("ExtUtils::PkgConfig")              -> Version("0")
+                                                                                             , Mod("ExtUtils::Depends")                -> Version("0"))
+                                    , Name("Gtk2-TrayIcon"                           ) -> Map( Mod("ExtUtils::PkgConfig")              -> Version("0")
+                                                                                             , Mod("ExtUtils::Depends")                -> Version("0")
+                                                                                             , Mod("Glib::CodeGen")                    -> Version("0"))
+                                    , Name("Gtk2-Unique"                             ) -> Map( Mod("Glib::CodeGen")                    -> Version("0"))
+                                    , Name("Hash-Merge-Simple"                       ) -> Map( Mod("Test::Deep")                       -> Version("0")
+                                                                                             , Mod("Test::Warn")                       -> Version("0")
+                                                                                             , Mod("Test::Exception")                  -> Version("0")
+                                                                                             , Mod("Test::Differences")                -> Version("0"))
+                                    , Name("HTML-Selector-XPath"                     ) -> Map( Mod("Test::Base")                       -> Version("0"))
+                                    , Name("HTML-Tidy"                               ) -> Map( Mod("Test::Exception")                  -> Version("0"))
+                                    , Name("HTTP-Response-Encoding"                  ) -> Map( Mod("LWP::UserAgent")                   -> Version("0"))
+                                    , Name("IO-Socket-Timeout"                       ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("Module-Build-Pluggable-PPPort"           ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("Module-Info"                             ) -> Map( Mod("Test::Pod")                        -> Version("0")
+                                                                                             , Mod("Test::Pod::Coverage")              -> Version("0"))
+                                    , Name("MooseX-Has-Options"                      ) -> Map( Mod("Test::Deep")                       -> Version("0"),
+                                                                                               Mod("Test::Differences")                -> Version("0"),
+                                                                                               Mod("Test::Exception")                  -> Version("0"),
+                                                                                               Mod("Test::Warn")                       -> Version("0"))
+                                    , Name("PerlIO-via-symlink"                      ) -> Map( Mod("inc::Module::Install")             -> Version("0"))
+                                    , Name("PerlIO-via-Timeout"                      ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("Plack"                                   ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("Plack-App-Proxy"                         ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("Plack-Test-ExternalServer"               ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("Plack-Middleware-Auth-Digest"            ) -> Map( Mod("Test::SharedFork")                 -> Version("0")
+                                                                                             , Mod("Test::TCP")                        -> Version("0"))
+                                    , Name("Plack-Middleware-Deflater"               ) -> Map( Mod("Test::SharedFork")                 -> Version("0")
+                                                                                             , Mod("Test::TCP")                        -> Version("0"))
+                                    , Name("Plack-Middleware-Session"                ) -> Map( Mod("Test::SharedFork")                 -> Version("0")
+                                                                                             , Mod("Test::TCP")                        -> Version("0"))
+                                    , Name("Protocol-HTTP2"                          ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("REST-Utils"                              ) -> Map( Mod("Test::LongString")                 -> Version("0")
+                                                                                             , Mod("Test::WWW::Mechanize")             -> Version("0"))
+                                    , Name("RT-Client-REST"                          ) -> Map( Mod("CGI")                              -> Version("0")
+                                                                                             , Mod("DateTime")                         -> Version("0")
+                                                                                             , Mod("DateTime::Format::DateParse")      -> Version("0")
+                                                                                             , Mod("Error")                            -> Version("0")
+                                                                                             , Mod("Exception::Class")                 -> Version("0")
+                                                                                             , Mod("HTTP::Cookies")                    -> Version("0")
+                                                                                             , Mod("LWP::UserAgent")                   -> Version("0")
+                                                                                             , Mod("Params::Validate")                 -> Version("0")
+                                                                                             , Mod("Test::Exception")                  -> Version("0"))
+                                    , Name("Starlet"                                 ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("Task-Plack"                              ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("Task-FreecellSolver-Testing"             ) -> Map( Mod("Test::Trap")                       -> Version("0"))
+                                    , Name("Term-ProgressBar-Simple"                 ) -> Map( Mod("Test::MockObject")                 -> Version("0"))
+                                    , Name("Test-Class-Most"                         ) -> Map( Mod("Test::Differences")                -> Version("0")
+                                                                                             , Mod("Test::Deep")                       -> Version("0")
+                                                                                             , Mod("Test::Exception")                  -> Version("0")
+                                                                                             , Mod("Test::Warn")                       -> Version("0"))
+                                    , Name("Test-Run-Plugin-ColorFileVerdicts"       ) -> Map( Mod("Test::Trap")                       -> Version("0"))
+                                    , Name("Test-Run-Plugin-ColorSummary"            ) -> Map( Mod("Test::Trap")                       -> Version("0"))
+                                    , Name("Test-WWW-Mechanize"                      ) -> Map( Mod("Test::LongString")                 -> Version("0") )
+                                    , Name("Test-WWW-Mechanize-CGI"                  ) -> Map( Mod("Test::LongString")                 -> Version("0"))
+                                    , Name("Test-WWW-Mechanize-PSGI"                 ) -> Map( Mod("Test::LongString")                 -> Version("0"))
+                                    , Name("Twiggy"                                  ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("YAML"                                    ) -> Map( Mod("Test::Base")                       -> Version("0"))
                                     ) withDefaultValue Map.empty
   val extraRuntimeDependencies = Map( Name("Any-Moose"                        ) -> Map( Mod("Mouse")                        -> Version("0")
                                                                                       , Mod("Moose")                        -> Version("0"))
@@ -517,30 +518,28 @@ object CpanErrata {
                                     , CpanPackage fromPath "D/DR/DROLSKY/MooseX-AttributeHelpers-0.23.tar.gz"        // nixpkgs has .patch file incompatible with newer versions
                                     , CpanPackage fromPath "G/GA/GAAS/Unicode-String-2.09.tar.gz"                    // nixpkgs has .patch file incompatible with newer versions
                                     , CpanPackage fromPath "J/JH/JHI/Time-HiRes-1.9753.tar.gz"                       // 1.9753->1.9754 broke tests of Catalyst-Runtime
-                                    , CpanPackage fromPath "M/MA/MARKOV/MIME-Types-2.13.tar.gz"                      // 2.13-~->2.17  broke tests of Catalyst
-//                                  , CpanPackage fromPath "U/UM/UMEMOTO/Socket6-0.28.tar.gz"                        // 2018-03-08: broken on staging (ok on master)
-//                                  , CpanPackage fromPath "A/AG/AGROLMS/GSSAPI-0.28.tar.gz"                         // 2018-03-08: broken on staging (ok on master)
                                     , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"                // 2.15 seems broken
                                     , CpanPackage fromPath "M/MA/MAKAMAKA/JSON-2.90.tar.gz"                          // 2.97xx test failed
                                     , CpanPackage fromPath "R/RU/RURBAN/B-C-1.54.tar.gz"                             // 1.55: No rule to make target 'subdirs-test_dynamic', needed by 'test'
-                                    , CpanPackage fromPath "N/NI/NIGELM/Catalyst-Controller-HTML-FormFu-2.02.tar.gz" // 2.04 test failed
                                     , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11 test failed
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
-  val doCheckOverride          = Map( Name("PathTools")                            -> false
-                                    , Name("Net-HTTP")                             -> false
-                                    , Name("Net-Amazon-MechanicalTurk")            -> false // wants network
-                                    , Name("NetAddr-IP")                           -> false // 2018-03-08: tests broken on staging (ok on master)
-                                    , Name("JSON")                                 -> false // 2018-03-08: tests broken on staging (ok on master)
-                                    , Name("YAML-LibYAML")                         -> false // 2018-03-08: tests broken on staging (ok on master)
-                                    , Name("Razor2-Client-Agent")                  -> false // 2018-03-08: tests broken on staging (ok on master)
-                                    , Name("Compress-Bzip2")                       -> false // 2018-03-08: tests broken on staging (test fails with "syntax error near unexpected token `0,' ")
-                                    , Name("Task-Catalyst-Tutorial")               -> false // fails with "open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165."
-                                    , Name("Dist-Zilla-PluginBundle-TestingMania") -> false // fails with "open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165."
-                                    , Name("RSS-Parser-Lite")                      -> false // creates files in $HOME
-                                    , Name("B-C")                                  -> false // test failed, mark it broken?
+  val doCheckOverride          = Map( Name("PathTools")                            -> (false, "Can't exec 'pwd': No such file or directory")
+                                    , Name("Net-HTTP")                             -> (false, "wants network")
+                                    , Name("Net-Amazon-MechanicalTurk")            -> (false, "wants network")
+                                    , Name("NetAddr-IP")                           -> (true, "")
+                                    , Name("JSON")                                 -> (true, "")
+                                    , Name("YAML-LibYAML")                         -> (true, "")
+                                    , Name("Razor2-Client-Agent")                  -> (true, "")
+                                    , Name("Compress-Bzip2")                       -> (true, "")
+                                    , Name("Task-Catalyst-Tutorial")               -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
+                                    , Name("Dist-Zilla-PluginBundle-TestingMania") -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
+                                    , Name("Catalyst-Controller-HTML-FormFu")      -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
+                                    , Name("RSS-Parser-Lite")                      -> (false, "creates files in HOME")
+                                    , Name("B-C")                                  -> (false, "test fails")
+                                    , Name("Test-Cmd")                             -> (false, "test fails")
                                     )
 }
 
@@ -653,7 +652,7 @@ class PullRequester(repopath: File) {
             , nameAndVersion:        String
             , url:                   String
             , sha256:                SHA256
-            , doCheckOverride:       Option[Boolean]
+            , doCheckOverride:       Option[(Boolean, /*comment*/String)]
             , buildInputs:           Traversable[String]
             , propagatedBuildInputs: Traversable[String]
             , licenses:              Traversable[License]
@@ -673,11 +672,12 @@ class PullRequester(repopath: File) {
                                                                            case 52 => Some(s"sha256 = \042${sha256.base32}\042;")
                                                                          })
       (this.doCheck, doCheckOverride) match {
-        case (None,      Some(false)      ) => val a = s.split('\n')
-                                               s = (a.init :+ s"    doCheck = false;" :+ a.last) mkString "\n"
-        case (`doCheck`, _                ) =>
-        case (Some(_),   None | Some(true)) => ??? // FIXME: remove doCheck
-        case (Some(_),   Some(false)      ) => s = """(?s) doCheck\s*=\s*[^;]+;""".r.replaceAllIn(s, s" doCheck = false;")
+        case (_,                   None                  ) => // keep unchanged
+        case (None,                Some((false, comment))) => val a = s.split('\n')
+                                                              s = (a.init :+ s"    doCheck = false; /* $comment */" :+ a.last) mkString "\n"
+        case (_,                   Some((false, comment))) => s =   """(?s) doCheck\s*=\s*[^;]+;(\s*/\*.+?\*/)?""".r.replaceAllIn(s, s" doCheck = false; /* $comment */")
+        case (None | Some("true"), Some((true, _       ))) => // keep unchanged
+        case (Some("false"),       Some((true, _       ))) => s = """(?s)\s+doCheck\s*=\s*[^;]+;(\s*/\*.+?\*/)?""".r.replaceAllIn(s, "")
       }
 
       (this.propagatedBuildInputs, propagatedBuildInputs.nonEmpty) match {
@@ -737,8 +737,8 @@ class PullRequester(repopath: File) {
         case a       => sb append s"""     buildInputs = [ ${a.map(escapedNixifiedName).sorted mkString " "} ];\n"""
       }
       CpanErrata.doCheckOverride.get(cp.name) match {
-        case Some(false)       => sb append s"""       doCheck = false;\n"""
-        case Some(true) | None =>
+        case Some((false, comment)) => sb append s"""       doCheck = false; /* $comment */\n"""
+        case Some((true, _)) | None =>
       }
       sb append s"""     meta = {\n"""
       cp.meta.description foreach { text =>

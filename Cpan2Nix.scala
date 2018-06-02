@@ -926,7 +926,7 @@ class PullRequester(repopath: File) {
 
 
 object Cpan2Nix {
-  val forceLocalBuild = true
+  val forceLocalBuild = !true
 
   def main(args: Array[String]) {
     args match {
@@ -1009,7 +1009,7 @@ object Cpan2Nix {
                                                                                                               }
                                                   }
 /*
-        val toupdate = nixPkgs.allPackages filter (_.name == Name("VM-EC2-Security-CredentialCache"))
+        val toupdate = nixPkgs.allPackages filter (_.name == Name("Tie-Hash-Indexed"))
 */
 
         val totest = List.newBuilder[String]
@@ -1038,24 +1038,47 @@ object Cpan2Nix {
                           |  ]
                           |""".stripMargin
         println(nixcode)
-        val exitCode = Process("nix-build"
-                            :: (if (forceLocalBuild)
-                                     "--builders" :: ""
-                                  :: "--option" :: "binary-caches" :: "http://nix-cache.s3.amazonaws.com/"
-                                  :: Nil
-                                else
-                                     "--builders" :: "root@ifn2.dmz x86_64-linux /home/user/.ssh/id_ed25519 6 6 kvm,big-parallel"
-                                  :: "--keep-going"
-                                  :: Nil
-                               )
-                           ::: "--show-trace"
-                            :: "--keep-failed" :: "-E" :: nixcode :: Nil,
-                               cwd = repopath,
-                               "NIXPKGS_CONFIG" -> "",
-                               "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
-                               ).!
-        require(exitCode == 0)
 
+        if (!forceLocalBuild) {
+               val    drvs = Process( "nix-instantiate"
+                                   :: "--show-trace"
+                                   :: "-E" :: nixcode :: Nil,
+                                   cwd = repopath,
+                                   "NIXPKGS_CONFIG" -> "",
+                                   "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
+                                   ).!!.split('\n').toList
+          lazy val alldrvs = Process("nix-store" :: "-qR" :: drvs).!!.split('\n').toList
+
+          val worker = "root@167.99.212.66"
+          val NIX_SSHOPTS = "-p922" :: Nil
+
+          // needs https://github.com/NixOS/nix/pull/2205
+          //Process("nix" :: "copy" :: "-v" :: "--recursive" :: "--to" :: "ssh://"+worker :: drvs,
+          //        cwd = repopath,
+          //        "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
+          Process("nix-copy-closure" :: "-v" :: "--to" :: worker :: drvs,
+                  cwd = repopath,
+                  "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
+
+          Process("ssh" :: NIX_SSHOPTS ::: worker :: "--" :: "nix-store" :: "--realise" :: "-j16" :: "-k" :: drvs).!
+
+          /* copy the results back
+          Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: worker :: drvs,
+                  cwd = repopath,
+                  "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
+          */
+        } else {
+          val exitCode = Process( "nix-build"
+                               :: "--option"   :: "binary-caches"            :: "http://cache.nixos.org/"
+                               :: "--builders" :: ""
+                               :: "--show-trace"
+                               :: "--keep-failed" :: "-E" :: nixcode :: Nil,
+                                  cwd = repopath,
+                                  "NIXPKGS_CONFIG" -> "",
+                                  "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
+                               ).!
+          require(exitCode == 0)
+        }
       case _ =>
         println(s"unexpected args: ${args.toList}")
     }

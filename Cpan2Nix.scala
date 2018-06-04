@@ -35,14 +35,20 @@ object Version extends Ordering[Version] {
   private[this] val INT = "([0-9]+)".r
   def compare(a: Version, b: Version) = {
     val l = a.vectorized.length min b.vectorized.length
-    (0 until l).prefixLength(i => a.vectorized(i) equals b.vectorized(i)) match {
-      case `l` => a.vectorized.length compare b.vectorized.length
-      case i   => a.vectorized(i) compare b.vectorized(i)
+    (a.vectorized.head, b.vectorized.head) match {
+      case (INT(aint), INT(bint)) if aint != bint =>
+        aint.toLong compare bint.toLong
+      case _ =>
+        (0 until l).prefixLength(i => a.vectorized(i) equals b.vectorized(i)) match {
+          case `l` => a.vectorized.length compare b.vectorized.length
+          case i   => a.vectorized(i) compare b.vectorized(i)
+        }
     }
   }
   // perl versions usually do not follow semantic version rules, for example:
   require(Version("1.4201") < Version("1.45"))
   require(Version("1.07") < Version("1.3")) // perl specific
+  require(Version("98.112902") < Version("2013.0523"))
 }
 
 
@@ -204,7 +210,7 @@ class NixPkgs(repopath: String /*File or URL*/) {
 
 
 
-case class CpanPackage(author: Author, name: Name, version: Version, path: String) {
+case class CpanPackage private(author: Author, name: Name, version: Version, path: String) {
   lazy val tarballFile: File         = Cpan.downloadFile(this.path) getOrElse (throw new RuntimeException(s"${this.path} not found"))
   lazy val metaFile:    Option[File] = Cpan.downloadFile((NixPackage.extentions+"$").r.replaceAllIn(this.path, ".meta"  ))
 //lazy val readmeFile:  Option[File] = Cpan.downloadFile((NixPackage.extentions+"$").r.replaceAllIn(this.path, ".readme"))
@@ -281,16 +287,17 @@ case class CpanPackage(author: Author, name: Name, version: Version, path: Strin
                )
   }
 
-  def suggestedNixpkgsName: String = name.toString.replace("-", "").replace("_", "")
+  def suggestedNixpkgsName: String = name.toString.replace("-", "").replace("+", "").replace("_", "")
 }
 
 
 object CpanPackage {
-  private[this] val re = ("""[A-Z]/[A-Z]{2}/([A-Z0-9-]+)(?:/[^/]+)*/([^/]+)""" + NixPackage.extentions).r
-  def fromPath(path: String) = path match {
+  private[this] val re       = ("""[A-Z]/[A-Z]{2}/([A-Z0-9-]+)(?:/[^/]+)*/([^/]+)""" + NixPackage.extentions).r
+  private[this] val internat = new collection.mutable.HashMap[String, CpanPackage]
+  def fromPath(path: String) = internat.getOrElseUpdate(path, path match {
     case re(author, nameVersion) => val (name, version) = CpanErrata parseNameVersion nameVersion
                                     CpanPackage(Author(author), name, version, path)
-  }
+  })
 }
 
 
@@ -308,13 +315,12 @@ object CpanErrata {
   private[this] val nvcache = collection.mutable.Map.empty[String, (Name, Version)] // to avoid flooding same warnings
   def parseNameVersion(s: String): (Name, Version) = nvcache.getOrElseUpdate(s, {
     val (n, v) = s match {
-      case "Data-Dumper-Lazy"                 => (Name(s),                                 Version(""))
-      case "Spreadsheet-ParseExcel-Assist"    => (Name(s),                                 Version(""))
       case "Spreadsheet-WriteExcel-WebPivot2" => (Name("Spreadsheet-WriteExcel-WebPivot"), Version("2"))
       case exception1 (n, v)                  => (Name(n),                                 Version(v))
       case suspicious1(n, v)                  => System.err.println(s"version of `$s` might be detected incorrectly as `$v`")
                                                  (Name(n),                                 Version(v))
       case rule1      (n, badversion1(n2, v)) => (Name(n+"-"+n2),                          Version(v))
+      case rule1      (n, badversion2(n2))    => (Name(n+"-"+n2),                          Version(""))
       case rule1      (n, v)                  => (Name(n),                                 Version(v))
       case rule2      (n, badversion2(n2))    => (Name(n+"_"+n2),                          Version(""))
       case rule2      (n, v)                  => (Name(n),                                 Version(v))
@@ -553,26 +559,27 @@ object CpanErrata {
 
 
 object Cpan {
-  private val allPackages     = new collection.mutable.HashMap[CpanPackage, CpanPackage]
           val byMod           = new collection.mutable.HashMap[Mod,            Set[CpanPackage]] withDefaultValue Set.empty
           val byName          = new collection.mutable.HashMap[Name,           Set[CpanPackage]] withDefaultValue Set.empty
           val byAuthorAndName = new collection.mutable.HashMap[(Author, Name), Set[CpanPackage]] withDefaultValue Set.empty
+          val providedMods    = new collection.mutable.HashMap[CpanPackage,    Map[Mod,Version]] withDefaultValue Map.empty
 
   locally {
     if (!new File("02packages.details.txt").exists) {
       "wget https://raw.githubusercontent.com/metacpan/metacpan-cpan-extracted/master/02packages.details.txt".!
     }
-    val re = ("""(\S+)\s+\S+\s+([A-Z]/[A-Z]{2}/[A-Z0-9-]+(?:/[^/]+)*/[^/]+""" + NixPackage.extentions + ")").r
+    val re = ("""(\S+)\s+(\S+)\s+([A-Z]/[A-Z]{2}/[A-Z0-9-]+(?:/[^/]+)*/[^/]+""" + NixPackage.extentions + ")").r
     scala.io.Source.fromFile("02packages.details.txt").getLines dropWhile(_.nonEmpty) dropWhile(_.isEmpty) foreach {
-      case re(mod, path) => Try(CpanPackage fromPath path) match {
-                              case Success(cp) =>
-                                val cpinterned = allPackages.getOrElseUpdate(cp, cp)
-                                byMod          (Mod(mod)          ) += cpinterned
-                                byName         (           cp.name) += cpinterned
-                                byAuthorAndName(cp.author->cp.name) += cpinterned
-                              case Failure(e) =>
-                                System.err.println(s"ignore `$path' $e")
-                            }
+      case re(modstr, modverstr, path) => Try(CpanPackage fromPath path) match {
+                                            case Success(cp) =>
+                                              val mod        = Mod(modstr)
+                                              byMod          (mod               ) += cp
+                                              byName         (           cp.name) += cp
+                                              byAuthorAndName(cp.author->cp.name) += cp
+                                              providedMods   (cp                ) += mod -> Version(modverstr)
+                                            case Failure(e) =>
+                                              System.err.println(s"ignore `$path' $e")
+                                          }
       case line          => System.err.println(s"ignore `$line'")
     }
   }
@@ -614,9 +621,9 @@ object Cpan {
 }
 
 
-class PullRequester(repopath: File) {
-  object LocalPerl {
-    var theOldestSupportedPerl = Process( "nix-build" :: "--show-trace"
+class TheOldestSupportedPerl(repopath: File) {
+  val perlVersion = "5.22"
+  private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
                                        :: "-E" :: "(import <nixpkgs> { }).perl522" :: Nil,
                                           cwd = repopath,
@@ -624,20 +631,23 @@ class PullRequester(repopath: File) {
                                           "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
                                         ).!!.trim
 
-    private[this] val localVersions = collection.mutable.HashMap.empty[Mod, Option[Version]]
-    def localVersion(mod: Mod): Option[Version] = localVersions.getOrElseUpdate(mod, {
-      val lv = if (mod.toString equalsIgnoreCase "if")  // "perl -e 'print $if::VERSION'" does not work
-                 Some(Version("0.0606"))
-               else
-                 Try(Process( List("bash", "-c", s"$theOldestSupportedPerl/bin/perl -M$mod -e 'print $$$mod::VERSION' 2>/dev/null")
-                            , cwd = None
-                            , "PERL5LIB" -> s"$theOldestSupportedPerl/lib/perl5/site_perl"
-                            ).!!.trim).toOption map (Version(_))
-//    println(s"local $mod = $lv")
-      lv
-    })
-  }
+  private[this] val localVersions = collection.mutable.HashMap.empty[Mod, Option[Version]]
+  def versionOf(mod: Mod): Option[Version] = localVersions.getOrElseUpdate(mod, {
+    val lv = if (mod.toString equalsIgnoreCase "if")  // "perl -e 'print $if::VERSION'" does not work
+               Some(Version("0.0606"))
+             else
+               Try(Process( List("bash", "-c", s"$derivation/bin/perl -M$mod -e 'print $$$mod::VERSION' 2>/dev/null")
+                          , cwd = None
+                          , "PERL5LIB" -> s"$derivation/lib/perl5/site_perl"
+                          ).!!.trim).toOption map (Version(_))
+    //for (version <- lv)
+    //  println(s"TheOldestSupportedPerl: $mod = $version")
+    lv
+  })
+}
 
+
+class PullRequester(repopath: File, theOldestSupportedPerl: TheOldestSupportedPerl) {
   // a typical code block in `perl-packages.nix`
   case class BuildPerlPackageBlock(source: String) {
     val nixpkgsName:                        String   =                   """(?s)^  (\S+)"""                    .r.findFirstMatchIn(source).get.group(1)
@@ -789,7 +799,7 @@ class PullRequester(repopath: File) {
     if (mod.toString equalsIgnoreCase "perl")
       None
     else
-      LocalPerl.localVersion(mod) match {
+      theOldestSupportedPerl.versionOf(mod) match {
         case Some(localver) if version<=localver                      => None
         case _ if CpanErrata.modsToIgnore.get(mod).exists(_(version)) => None
         case _                                                        =>
@@ -845,13 +855,39 @@ class PullRequester(repopath: File) {
     println(runtimeDeps(cp) mkString "\n")
 */
 
-    var message = List.empty[String]
+    def isBuiltInTheOldestSupportedPerl: Boolean = {
+      val mods:     Map[Mod, Version]         = Cpan.providedMods(cp)
+      val tosmMods: Map[Mod, (Version, Option[Version])] = mods map { case (mod, cpanVersion) => mod -> (cpanVersion, theOldestSupportedPerl.versionOf(mod)) }
+      val rc = tosmMods.nonEmpty &&
+               tosmMods.forall{ case (mod, (cpanVersion, Some(tosmVersion))) => cpanVersion <= tosmVersion
+                                case _                                       => false }
+//      if (rc) {
+//        println(s"| $np -> $cp")
+//        for (x <- tosmMods)
+//          println(s"|   $x")
+//      }
+      rc
+    }
 
     buildPerlPackageBlocks find (_._2.resolvedUrl == np.url) match {
       case None =>
         System.err.println(s"$np->$cp not found in perl-packages.nix")
         None
+
+      case Some((_, block)) if isBuiltInTheOldestSupportedPerl =>
+        // do mutate `perl-packages.nix`
+        buildPerlPackageBlocks = buildPerlPackageBlocks - block.nixpkgsName
+        `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${cp.suggestedNixpkgsName} = null;""")
+
+        val pw = new java.io.PrintWriter(new File(repopath, "/pkgs/top-level/perl-packages.nix"))
+        pw write `perl-packages.nix`
+        pw.close()
+
+        Some(s"perlPackages.${block.nixpkgsName}: removed as built in the oldest supported perl ${theOldestSupportedPerl.perlVersion}")
+
       case Some((_, block)) =>
+        var message = List.empty[String]
+
         val newBlock = block.updatedTo(cp)
 
         if (np.version != cp.version)
@@ -995,17 +1031,18 @@ object Cpan2Nix {
                     }
                   case None => // author is not specified in nixpkgs
                     Cpan.byName(np.name) match {
-                     case cpps if cpps.isEmpty                          => throw new RuntimeException(s"${np.url} not found in CPAN")
-                     case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
-                     case cpps if cpps forall (_.version < np.version)  => throw new RuntimeException(s"${np.url} not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
-                   }
+                      case cpps if cpps.isEmpty                          => throw new RuntimeException(s"${np.url} not found in CPAN")
+                      case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
+                      case cpps if cpps forall (_.version < np.version)  => throw new RuntimeException(s"${np.url} not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
+                    }
                 }
               }
           }
         })
 
 
-        val pullRequester = new PullRequester(repopath)
+        val theOldestSupportedPerl = new TheOldestSupportedPerl(repopath)
+        val pullRequester = new PullRequester(repopath, theOldestSupportedPerl)
 
 
         val toupdate = nixPkgs.allPackages sortBy { case np if np.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'

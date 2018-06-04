@@ -876,13 +876,13 @@ class PullRequester(repopath: File, theOldestSupportedPerl: TheOldestSupportedPe
 
       case Some((_, block)) if isBuiltInTheOldestSupportedPerl =>
         // do mutate `perl-packages.nix`
-        `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null;""")
+        `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null; # part of Perl ${theOldestSupportedPerl.perlVersion}""")
 
         val pw = new java.io.PrintWriter(new File(repopath, "/pkgs/top-level/perl-packages.nix"))
         pw write `perl-packages.nix`
         pw.close()
 
-        Some(s"perlPackages.${block.nixpkgsName}: removed as built in the oldest supported perl ${theOldestSupportedPerl.perlVersion}")
+        Some(s"perlPackages.${block.nixpkgsName}: removed built-in")
 
       case Some((_, block)) =>
         var message = List.empty[String]

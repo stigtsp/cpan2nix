@@ -740,34 +740,34 @@ class PullRequester(repopath: File, theOldestSupportedPerl: TheOldestSupportedPe
     def this(cp: CpanPackage) = this {
       val sb = new java.lang.StringBuilder
       sb append s"""  ${cp.suggestedNixpkgsName} = ${if (cp.isModule) "buildPerlModule" else "buildPerlPackage"} rec {\n"""
-      sb append s"""     name = "${cp.name}-${cp.version}";\n"""
-      sb append s"""     src = fetchurl {\n"""
-      sb append s"""       url = mirror://cpan/authors/id/${cp.path};\n"""
-      sb append s"""       sha256 = "${cp.sha256.base32}";\n"""
-      sb append s"""     };\n"""
+      sb append s"""    name = "${cp.name}-${cp.version}";\n"""
+      sb append s"""    src = fetchurl {\n"""
+      sb append s"""      url = mirror://cpan/authors/id/${cp.path};\n"""
+      sb append s"""      sha256 = "${cp.sha256.base32}";\n"""
+      sb append s"""    };\n"""
       (runtimeDeps(cp) -- runtimeDeps(cp).flatMap(deepRuntimeDeps _)).toArray match {
         case Array() =>
-        case a       => sb append s"""     propagatedBuildInputs = [ ${a.map(escapedNixifiedName).sorted mkString " "} ];\n"""
+        case a       => sb append s"""    propagatedBuildInputs = [ ${a.map(escapedNixifiedName).sorted mkString " "} ];\n"""
       }
       (buildDeps(cp)   -- deepRuntimeDeps(cp)                       ).toArray match {
         case Array() =>
-        case a       => sb append s"""     buildInputs = [ ${a.map(escapedNixifiedName).sorted mkString " "} ];\n"""
+        case a       => sb append s"""    buildInputs = [ ${a.map(escapedNixifiedName).sorted mkString " "} ];\n"""
       }
       CpanErrata.doCheckOverride.get(cp.name) match {
-        case Some((false, comment)) => sb append s"""       doCheck = false; /* $comment */\n"""
+        case Some((false, comment)) => sb append s"""      doCheck = false; /* $comment */\n"""
         case Some((true, _)) | None =>
       }
-      sb append s"""     meta = {\n"""
+      sb append s"""    meta = {\n"""
       cp.meta.description foreach { text =>
-        sb append s"""       description = "${text}";\n"""
+        sb append s"""      description = "${text}";\n"""
       }
       if (cp.meta.licenses.nonEmpty) {
-        sb append s"""       license = with stdenv.lib.licenses; [ ${cp.meta.licenses mkString " "} ];\n"""
+        sb append s"""      license = with stdenv.lib.licenses; [ ${cp.meta.licenses mkString " "} ];\n"""
       }
       if (cp.meta.homepage.nonEmpty) {
-        sb append s"""       homepage = "${cp.meta.homepage.get}";\n"""
+        sb append s"""      homepage = "${cp.meta.homepage.get}";\n"""
       }
-      sb append s"""     };\n"""
+      sb append s"""    };\n"""
       sb append s"""  };\n"""
       sb.toString
     }
@@ -876,8 +876,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: TheOldestSupportedPe
 
       case Some((_, block)) if isBuiltInTheOldestSupportedPerl =>
         // do mutate `perl-packages.nix`
-        buildPerlPackageBlocks = buildPerlPackageBlocks - block.nixpkgsName
-        `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${cp.suggestedNixpkgsName} = null;""")
+        `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null;""")
 
         val pw = new java.io.PrintWriter(new File(repopath, "/pkgs/top-level/perl-packages.nix"))
         pw write `perl-packages.nix`
@@ -1075,7 +1074,7 @@ object Cpan2Nix {
         val nixcode = s"""|let
                           |  pkgs = import <nixpkgs> { };
                           |in
-                          |  [
+                          |  pkgs.lib.filter (x: x != null) [
                           |    ${totest.result flatMap (npname => List( s"pkgs.perlPackages.${npname}"
                                                                   // , s"pkgs.pkgsi686Linux.perlPackages.${npname}"
                                                                       )) mkString "\n    "}

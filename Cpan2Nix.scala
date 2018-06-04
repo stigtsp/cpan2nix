@@ -511,7 +511,9 @@ object CpanErrata {
                                                                                       , Mod("Log::Message")                 -> Version("0")
                                                                                       , Mod("Module::Pluggable")            -> Version("0")
                                                                                       , Mod("Object::Accessor")             -> Version("0")
-                                                                                      , Mod("Package::Constants")           -> Version("0"))
+                                                                                      , Mod("Package::Constants")           -> Version("0")
+                                                                                      , Mod("Term::UI")                     -> Version("0") // https://github.com/NixOS/nixpkgs/pull/41394#issuecomment-394279386
+                                                                                      )
                                     ) withDefaultValue Map.empty
 
   // *** pinned packages

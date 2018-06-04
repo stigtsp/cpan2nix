@@ -507,6 +507,11 @@ object CpanErrata {
                                     , Name("XML-SAX"                          ) -> Map( Mod("XML::SAX::Exception")          -> Version("0"))
                                     , Name("XML-Grove"                        ) -> Map( Mod("Data::Grove")                  -> Version("0"))
                                     , Name("XML-Handler-YAWriter"             ) -> Map( Mod("XML::Parser::PerlSAX")         -> Version("0"))
+                                    , Name("CPANPLUS"                         ) -> Map( Mod("Archive::Extract")             -> Version("0") // https://github.com/NixOS/nixpkgs/pull/41394#issuecomment-394208166
+                                                                                      , Mod("Log::Message")                 -> Version("0")
+                                                                                      , Mod("Module::Pluggable")            -> Version("0")
+                                                                                      , Mod("Object::Accessor")             -> Version("0")
+                                                                                      , Mod("Package::Constants")           -> Version("0"))
                                     ) withDefaultValue Map.empty
 
   // *** pinned packages
@@ -610,7 +615,7 @@ object Cpan {
 class PullRequester(repopath: File) {
   object LocalPerl {
     var theOldestSupportedPerl = Process( "nix-build" :: "--show-trace"
-                                       :: "--option" :: "binary-caches" :: "http://nix-cache.s3.amazonaws.com/"
+                                       :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
                                        :: "-E" :: "(import <nixpkgs> { }).perl522" :: Nil,
                                           cwd = repopath,
                                           "NIXPKGS_CONFIG" -> "",
@@ -926,7 +931,7 @@ class PullRequester(repopath: File) {
 
 
 object Cpan2Nix {
-  val forceLocalBuild = !true
+  val forceLocalBuild = true
 
   def main(args: Array[String]) {
     args match {
@@ -940,7 +945,7 @@ object Cpan2Nix {
         }
 
         val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
-        require(Process("git" :: "checkout"    ::         "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
+        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
         require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
         require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
 
@@ -1069,7 +1074,7 @@ object Cpan2Nix {
           */
         } else {
           val exitCode = Process( "nix-build"
-                               :: "--option"   :: "binary-caches"            :: "http://cache.nixos.org/"
+                               :: "--option"   :: "binary-caches" :: "http://cache.nixos.org/"
                                :: "--builders" :: ""
                                :: "--show-trace"
                                :: "--keep-failed" :: "-E" :: nixcode :: Nil,
@@ -1079,6 +1084,7 @@ object Cpan2Nix {
                                ).!
           require(exitCode == 0)
         }
+
       case _ =>
         println(s"unexpected args: ${args.toList}")
     }

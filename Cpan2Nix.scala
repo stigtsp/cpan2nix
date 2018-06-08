@@ -356,6 +356,7 @@ object CpanErrata {
   val inExternalNixFiles       = Set( Name("Compress-Raw-Zlib")                       // in an external file (todo? move into perl-packages.nix)
                                     , Name("DBD-SQLite")
                                     , Name("DBD-Pg")
+                                    , Name("DBD-mysql")
                                     , Name("DB_File")
                                     )
 
@@ -519,13 +520,7 @@ object CpanErrata {
 
   // *** pinned packages
   val pinnedPackages           = Set( CpanPackage fromPath "N/NJ/NJH/MusicBrainz-DiscID-0.03.tar.gz"                 // need to review patchPhase manually
-//                                  , CpanPackage fromPath "P/PM/PMQS/Compress-Raw-Zlib-2.074.tar.gz"                // in external .nix file, need to update manually (in perl)
-//                                  , CpanPackage fromPath "I/IS/ISHIGAKI/DBD-SQLite-1.56.tar.gz"                    // in external .nix file, need to update manually
-//                                  , CpanPackage fromPath "P/PM/PMQS/DB_File-1.831.tar.gz"                          // in external .nix file, need to update manually
-                                    , CpanPackage fromPath "L/LD/LDS/GD-2.53.tar.gz"                                 // nixpkgs has .patch file incompatible with newer versions
                                     , CpanPackage fromPath "D/DR/DROLSKY/MooseX-AttributeHelpers-0.23.tar.gz"        // nixpkgs has .patch file incompatible with newer versions
-                                    , CpanPackage fromPath "G/GA/GAAS/Unicode-String-2.09.tar.gz"                    // nixpkgs has .patch file incompatible with newer versions
-                                    , CpanPackage fromPath "J/JH/JHI/Time-HiRes-1.9753.tar.gz"                       // 1.9753->1.9754 broke tests of Catalyst-Runtime
                                     , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"                // 2.15 seems broken
                                     , CpanPackage fromPath "M/MA/MAKAMAKA/JSON-2.90.tar.gz"                          // 2.97xx test failed
                                     , CpanPackage fromPath "R/RU/RURBAN/B-C-1.54.tar.gz"                             // 1.55: No rule to make target 'subdirs-test_dynamic', needed by 'test'
@@ -973,11 +968,13 @@ object Cpan2Nix {
         if (!repopath.exists) {
           require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
         } else {
-          require(Process("git" :: "fetch" :: "origin" :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "fetch" :: "origin" :: "master"  :: Nil, cwd = repopath).! == 0)
         }
 
         val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
         require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
+//tmp   require(Process("git" :: "merge"               :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
         require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
         require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
 

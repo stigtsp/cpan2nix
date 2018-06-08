@@ -343,17 +343,11 @@ object CpanErrata {
                                     , Name("Mac-SystemDirectory")                        -> ((_:Version) => true) // fails on linux, I cannot test
                                     , Name("Mac-Pasteboard")                             -> ((_:Version) => true) // fails on linux, I cannot test
                                     , Name("Regexp-Copy")                                -> ((_:Version) => true) // broken
-                                    , Name("Socket6")                                    -> ((_:Version) => true) // C code broken "Socket6.xs:109:22: error: 'sv_undef' undeclared (first use in this function); did you mean 'av_undef'?  "
-                                    , Name("IO-Socket-INET6")                            -> ((_:Version) => true) // C code broken "Socket6.xs:109:22: error: 'sv_undef' undeclared (first use in this function); did you mean 'av_undef'?  "
-                                    , Name("Net-Patricia")                               -> ((_:Version) => true) // C code broken "Socket6.xs:109:22: error: 'sv_undef' undeclared (first use in this function); did you mean 'av_undef'?  "
-                                    , Name("GSSAPI")                                     -> ((_:Version) => true) // `heimdal' is broken
                                     , Name("SOAP-Lite")                                  -> ((_:Version) => true) // failed to produce output path '/nix/store/w7kpfrg86sf2ynzv5jvhz1w879pl3igq-perl-IO-SessionData-1.03-devdoc'
                                     , Name("Catalyst-Engine-HTTP-Prefork")               -> ((_:Version) => true) // meta.broken = true
                                     , Name("Catalyst-Plugin-HTML-Widget")                -> ((_:Version) => true) // meta.broken = true
                                     , Name("Devel-SizeMe")                               -> ((_:Version) => true) // meta.broken = true
                                     , Name("Unicode-ICU-Collator")                       -> ((_:Version) => true) // meta.broken = true
-                                    , Name("Catalyst-Plugin-Unicode-Encoding")           -> ((_:Version) => true) // now Catalyst-Runtime, to be removed from nixpkgs
-                                    , Name("File-DesktopEntry")                          -> ((_:Version) => true) // nixpkgs has configurePhase incompatible with newer versions
                                     , Name("Mail-SPF")                                   -> ((_:Version) => true) // installPhase fails with "ERROR: Can't create '/usr/sbin'"
                                     , Name("GoferTransport-http")                        -> ((_:Version) => true) // installPhase fails with "No rule to make target 'pure_install'"
                                     )
@@ -361,6 +355,7 @@ object CpanErrata {
   // *** hack to work with packages wich are out of perl-packages.nix
   val inExternalNixFiles       = Set( Name("Compress-Raw-Zlib")                       // in an external file (todo? move into perl-packages.nix)
                                     , Name("DBD-SQLite")
+                                    , Name("DBD-Pg")
                                     , Name("DB_File")
                                     )
 

@@ -522,7 +522,6 @@ object CpanErrata {
   val pinnedPackages           = Set( CpanPackage fromPath "N/NJ/NJH/MusicBrainz-DiscID-0.03.tar.gz"                 // need to review patchPhase manually
                                     , CpanPackage fromPath "D/DR/DROLSKY/MooseX-AttributeHelpers-0.23.tar.gz"        // nixpkgs has .patch file incompatible with newer versions
                                     , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"                // 2.15 seems broken
-                                    , CpanPackage fromPath "M/MA/MAKAMAKA/JSON-2.90.tar.gz"                          // 2.97xx test failed
                                     , CpanPackage fromPath "R/RU/RURBAN/B-C-1.54.tar.gz"                             // 1.55: No rule to make target 'subdirs-test_dynamic', needed by 'test'
                                     , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11 test failed
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
@@ -532,11 +531,6 @@ object CpanErrata {
   val doCheckOverride          = Map( Name("PathTools")                            -> (false, "Can't exec 'pwd': No such file or directory")
                                     , Name("Net-HTTP")                             -> (false, "wants network")
                                     , Name("Net-Amazon-MechanicalTurk")            -> (false, "wants network")
-                                    , Name("NetAddr-IP")                           -> (true, "")
-                                    , Name("JSON")                                 -> (true, "")
-                                    , Name("YAML-LibYAML")                         -> (true, "")
-                                    , Name("Razor2-Client-Agent")                  -> (true, "")
-                                    , Name("Compress-Bzip2")                       -> (true, "")
                                     , Name("Task-Catalyst-Tutorial")               -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
                                     , Name("Dist-Zilla-PluginBundle-TestingMania") -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
                                     , Name("Catalyst-Controller-HTML-FormFu")      -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")

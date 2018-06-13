@@ -613,7 +613,7 @@ class TheOldestSupportedPerl(repopath: File) {
                                              Nil
                                            else
                                                 "--option" :: "builders-use-substitutes" :: "true"
-                                             :: "--builders" :: s"ssh://${Cpan2Nix.worker} x86_64-linux /home/user/.ssh/id_ed25519 96 96 kvm,big-parallel"
+                                             :: "--builders" :: s"ssh://${Cpan2Nix.worker} x86_64-linux /home/user/.ssh/id_ed25519 ${Cpan2Nix.concurrency} ${Cpan2Nix.concurrency} kvm,big-parallel"
                                              :: Nil)
                                       ::: "-E" :: "(import <nixpkgs> { }).perl522" :: Nil,
                                           cwd = repopath,
@@ -962,6 +962,7 @@ object Cpan2Nix {
   val forceLocalBuild = false
   val worker = "root@goo1.dmz"
   val NIX_SSHOPTS = "-p922" :: Nil
+  val concurrency = 96
 
 
   def main(args: Array[String]) {
@@ -1096,7 +1097,7 @@ object Cpan2Nix {
                   cwd = repopath,
                   "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
 
-          Process("ssh" :: NIX_SSHOPTS ::: worker :: "--" :: "nix-store" :: "--realise" :: "-j16" :: "-k" :: drvs).!
+          Process("ssh" :: NIX_SSHOPTS ::: worker :: "--" :: "nix-store" :: "--realise" :: s"-j${Cpan2Nix.concurrency}" :: "-k" :: drvs).!
 
           /* copy the results back
           Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: worker :: drvs,

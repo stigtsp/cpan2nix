@@ -506,6 +506,7 @@ object CpanErrata {
                                     , Name("Statistics-TTest"                 ) -> Map( Mod("Statistics::Distributions")    -> Version("0")
                                                                                       , Mod("Statistics::Descriptive")      -> Version("0"))
                                     , Name("Text-WrapI18N"                    ) -> Map( Mod("Text::CharWidth")              -> Version("0"))
+                                    , Name("Text-SimpleTable"                 ) -> Map( Mod("Unicode::GCString")            -> Version("0")) // or Text::VisualWidth::UTF8 or Text::VisualWidth::PP
                                     , Name("XML-SAX"                          ) -> Map( Mod("XML::SAX::Exception")          -> Version("0"))
                                     , Name("XML-Grove"                        ) -> Map( Mod("Data::Grove")                  -> Version("0"))
                                     , Name("XML-Handler-YAWriter"             ) -> Map( Mod("XML::Parser::PerlSAX")         -> Version("0"))
@@ -537,6 +538,7 @@ object CpanErrata {
                                     , Name("RSS-Parser-Lite")                      -> (false, "creates files in HOME")
                                     , Name("B-C")                                  -> (false, "test fails")
                                     , Name("Test-Cmd")                             -> (false, "test fails")
+                                    , Name("Tie-Hash-Indexed")                     -> (false, "test fails on some machines")
                                     )
 }
 
@@ -605,9 +607,8 @@ object Cpan {
 }
 
 
-class TheOldestSupportedPerl(repopath: File) {
-  val perlVersion = "5.22"
-  private[this] var derivation = Process( "nix-build" :: "-vv" :: "--show-trace"
+class PerlDerivation(repopath: File, name: String /* = "perl522"*/, val version: String /* = "5.22"*/) {
+  private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
                                        :: (if (Cpan2Nix.forceLocalBuild)
                                              Nil
@@ -615,7 +616,7 @@ class TheOldestSupportedPerl(repopath: File) {
                                                 "--option" :: "builders-use-substitutes" :: "true"
                                              :: "--builders" :: s"ssh://${Cpan2Nix.worker} x86_64-linux /home/user/.ssh/id_ed25519 ${Cpan2Nix.concurrency} ${Cpan2Nix.concurrency} kvm,big-parallel"
                                              :: Nil)
-                                      ::: "-E" :: "(import <nixpkgs> { }).perl522" :: Nil,
+                                      ::: "-E" :: s"(import <nixpkgs> { }).$name" :: Nil,
                                           cwd = repopath,
                                           "NIXPKGS_CONFIG" -> "",
                                           "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}",
@@ -632,13 +633,13 @@ class TheOldestSupportedPerl(repopath: File) {
                           , "PERL5LIB" -> s"$derivation/lib/perl5/site_perl"
                           ).!!.trim).toOption map (Version(_))
     //for (version <- lv)
-    //  println(s"TheOldestSupportedPerl: $mod = $version")
+    //  println(s"PerlDerivation($name): $mod = $version")
     lv
   })
 }
 
 
-class PullRequester(repopath: File, theOldestSupportedPerl: TheOldestSupportedPerl) {
+class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
   // a typical code block in `perl-packages.nix`
   case class BuildPerlPackageBlock(source: String) {
     val nixpkgsName:                        String   =                   """(?s)^  (\S+)"""                    .r.findFirstMatchIn(source).get.group(1)
@@ -867,7 +868,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: TheOldestSupportedPe
 
       case Some((_, block)) if isBuiltInTheOldestSupportedPerl =>
         // do mutate `perl-packages.nix`
-        `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null; # part of Perl ${theOldestSupportedPerl.perlVersion}""")
+        `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null; # part of Perl ${theOldestSupportedPerl.version}""")
 
         val pw = new java.io.PrintWriter(new File(repopath, "/pkgs/top-level/perl-packages.nix"))
         pw write `perl-packages.nix`
@@ -959,10 +960,10 @@ class PullRequester(repopath: File, theOldestSupportedPerl: TheOldestSupportedPe
 
 
 object Cpan2Nix {
-  val forceLocalBuild = false
-  val worker = "root@goo1.dmz"
-  val NIX_SSHOPTS = "-p922" :: Nil
-  val concurrency = 96
+  val forceLocalBuild = true
+  val worker          = "root@goo1.dmz"
+  val NIX_SSHOPTS     = "-p922" :: Nil
+  val concurrency     = 96
 
 
   def main(args: Array[String]) {
@@ -1037,7 +1038,7 @@ object Cpan2Nix {
         })
 
 
-        val theOldestSupportedPerl = new TheOldestSupportedPerl(repopath)
+        val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl522", version="5.22")
         val pullRequester = new PullRequester(repopath, theOldestSupportedPerl)
 
 

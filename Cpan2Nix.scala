@@ -607,12 +607,19 @@ object Cpan {
 
 class TheOldestSupportedPerl(repopath: File) {
   val perlVersion = "5.22"
-  private[this] var derivation = Process( "nix-build" :: "--show-trace"
+  private[this] var derivation = Process( "nix-build" :: "-vv" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
-                                       :: "-E" :: "(import <nixpkgs> { }).perl522" :: Nil,
+                                       :: (if (Cpan2Nix.forceLocalBuild)
+                                             Nil
+                                           else
+                                                "--option" :: "builders-use-substitutes" :: "true"
+                                             :: "--builders" :: s"ssh://${Cpan2Nix.worker} x86_64-linux /home/user/.ssh/id_ed25519 96 96 kvm,big-parallel"
+                                             :: Nil)
+                                      ::: "-E" :: "(import <nixpkgs> { }).perl522" :: Nil,
                                           cwd = repopath,
                                           "NIXPKGS_CONFIG" -> "",
-                                          "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
+                                          "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}",
+                                          "NIX_SSHOPTS"    -> Cpan2Nix.NIX_SSHOPTS.mkString(" ")
                                         ).!!.trim
 
   private[this] val localVersions = collection.mutable.HashMap.empty[Mod, Option[Version]]
@@ -952,7 +959,10 @@ class PullRequester(repopath: File, theOldestSupportedPerl: TheOldestSupportedPe
 
 
 object Cpan2Nix {
-  val forceLocalBuild = true
+  val forceLocalBuild = false
+  val worker = "root@goo1.dmz"
+  val NIX_SSHOPTS = "-p922" :: Nil
+
 
   def main(args: Array[String]) {
     args match {
@@ -1077,9 +1087,6 @@ object Cpan2Nix {
                                    "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
                                    ).!!.split('\n').toList
           lazy val alldrvs = Process("nix-store" :: "-qR" :: drvs).!!.split('\n').toList
-
-          val worker = "root@167.99.212.66"
-          val NIX_SSHOPTS = "-p922" :: Nil
 
           // needs https://github.com/NixOS/nix/pull/2205
           //Process("nix" :: "copy" :: "-v" :: "--recursive" :: "--to" :: "ssh://"+worker :: drvs,

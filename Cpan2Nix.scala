@@ -303,7 +303,7 @@ object CpanPackage {
 
 object CpanErrata {
   // *** difficult parse cases?
-  private[this] val exception1  = "(PerlMagick)-([0-9.]+-[0-9.]+)".r
+  private[this] val exception1  = "(PerlMagick|triceps)-([0-9.]+-[0-9.]+)".r
   private[this] val suspicious1 = "([^/]+)-[0-9.]+-([0-9.]+)".r
   private[this] val rule1       = "([^/]+)-([^/-]+)".r
   private[this] val badversion1 = "([A-Z][^/_-]*)_([^/-]+)".r // fix for strings like "App-NetdiscoX-Web-Plugin-GraphLinkSwitch_0.1" or "PDF-EasyPDF_0_04"
@@ -642,7 +642,7 @@ class PerlDerivation(repopath: File, name: String /* = "perl522"*/, val version:
 class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
   // a typical code block in `perl-packages.nix`
   case class BuildPerlPackageBlock(source: String) {
-    val nixpkgsName:                        String   =                   """(?s)^  (\S+)"""                    .r.findFirstMatchIn(source).get.group(1)
+    val nixpkgsName:                        String   =                   """(?s)^ {1,2}(\S+)"""                .r.findFirstMatchIn(source).get.group(1)
     val versionString:               Option[String]  =                   """(?s)version\s*=\s*"([^"]+)";"""    .r.findFirstMatchIn(source).map(_ group 1)
     val nameAndVersion:                     String   =                   """(?s)name\s*=\s*"([^"]+)";"""       .r.findFirstMatchIn(source).get.group(1)
     val url:                                String   = /*Try { */        """(?s)url\s*=\s*"?([^";]+)"?;"""     .r.findFirstMatchIn(source).get.group(1) /*} getOrElse {  println(source); ??? }*/
@@ -768,7 +768,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
   var `perl-packages.nix` = scala.io.Source.fromFile(new File(repopath, "/pkgs/top-level/perl-packages.nix")).mkString
   var buildPerlPackageBlocks = collection.immutable.TreeMap.empty[String, BuildPerlPackageBlock]
-  for (source <- """(?s)  \S+\s*=\s*(let .+? in\s*)?buildPerl(Package|Module) (rec )?\{.+?\n {1,3}\};\n""".r.findAllIn(`perl-packages.nix`);
+  for (source <- """(?s) {1,2}\S+\s*=\s*(let .+? in\s*)?buildPerl(Package|Module) (rec )?\{.+?\n {1,3}\};\n""".r.findAllIn(`perl-packages.nix`);
        bppb <- Try(new BuildPerlPackageBlock(source)) /*match { case Success(b) => Success(b); case Failure(e) => println(source); e.printStackTrace(); Failure(e) }*/ ) {
     buildPerlPackageBlocks += bppb.nixpkgsName -> bppb
   }
@@ -960,10 +960,10 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
 
 object Cpan2Nix {
-  val forceLocalBuild = true
-  val worker          = "root@goo1.dmz"
+  val forceLocalBuild = false
+  val worker          = "root@172.16.0.161"
   val NIX_SSHOPTS     = "-p922" :: Nil
-  val concurrency     = 96
+  val concurrency     = 16
 
 
   def main(args: Array[String]) {

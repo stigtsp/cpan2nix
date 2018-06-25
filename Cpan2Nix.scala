@@ -182,6 +182,7 @@ object NixPackage {
 
 
 class NixPkgs(repopath: String /*File or URL*/) {
+  // eval pkgs.perlPackages and extract all CPAN urls
   lazy val allPackages: List[NixPackage] = {
 
     val nixcode = """|let
@@ -339,17 +340,15 @@ object CpanErrata {
                                     , Mod("Catalyst::Engine::HTTP::Restarter::Watcher")  -> ((_:Version) => true)
                                     )
   val namesToIgnore            = Map( Name("Sys-Virt")                                   -> ((_:Version) => true) // must be updated in-sync with `pkgs.libvirt'
-                                    , Name("PathTools")                                  -> ((_:Version) => true) // breaks the installPhase
                                     , Name("Mac-SystemDirectory")                        -> ((_:Version) => true) // fails on linux, I cannot test
                                     , Name("Mac-Pasteboard")                             -> ((_:Version) => true) // fails on linux, I cannot test
                                     , Name("Regexp-Copy")                                -> ((_:Version) => true) // broken
-                                    , Name("SOAP-Lite")                                  -> ((_:Version) => true) // failed to produce output path '/nix/store/w7kpfrg86sf2ynzv5jvhz1w879pl3igq-perl-IO-SessionData-1.03-devdoc'
+                                    , Name("SOAP-Lite")                                  -> ((_:Version) => true) // needs 'outputs = [ "out" "dev" ];'
                                     , Name("Catalyst-Engine-HTTP-Prefork")               -> ((_:Version) => true) // meta.broken = true
                                     , Name("Catalyst-Plugin-HTML-Widget")                -> ((_:Version) => true) // meta.broken = true
                                     , Name("Devel-SizeMe")                               -> ((_:Version) => true) // meta.broken = true
                                     , Name("Unicode-ICU-Collator")                       -> ((_:Version) => true) // meta.broken = true
-                                    , Name("Mail-SPF")                                   -> ((_:Version) => true) // installPhase fails with "ERROR: Can't create '/usr/sbin'"
-                                    , Name("GoferTransport-http")                        -> ((_:Version) => true) // installPhase fails with "No rule to make target 'pure_install'"
+                                    , Name("Mail-SPF")                                   -> ((_:Version) => true) // custom 'buildPhase'
                                     )
 
   // *** hack to work with packages wich are out of perl-packages.nix
@@ -505,6 +504,7 @@ object CpanErrata {
                                     , Name("RSS-Parser-Lite"                  ) -> Map( Mod("local::lib")                   -> Version("0"))
                                     , Name("Statistics-TTest"                 ) -> Map( Mod("Statistics::Distributions")    -> Version("0")
                                                                                       , Mod("Statistics::Descriptive")      -> Version("0"))
+                                    , Name("GoferTransport-http"              ) -> Map( Mod("mod_perl2")                    -> Version("0"))
                                     , Name("Text-WrapI18N"                    ) -> Map( Mod("Text::CharWidth")              -> Version("0"))
                                     , Name("Text-SimpleTable"                 ) -> Map( Mod("Unicode::GCString")            -> Version("0")) // or Text::VisualWidth::UTF8 or Text::VisualWidth::PP
                                     , Name("XML-SAX"                          ) -> Map( Mod("XML::SAX::Exception")          -> Version("0"))
@@ -529,8 +529,7 @@ object CpanErrata {
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
-  val doCheckOverride          = Map( Name("PathTools")                            -> (false, "Can't exec 'pwd': No such file or directory")
-                                    , Name("Net-HTTP")                             -> (false, "wants network")
+  val doCheckOverride          = Map( Name("Net-HTTP")                             -> (false, "wants network")
                                     , Name("Net-Amazon-MechanicalTurk")            -> (false, "wants network")
                                     , Name("Task-Catalyst-Tutorial")               -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
                                     , Name("Dist-Zilla-PluginBundle-TestingMania") -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
@@ -731,7 +730,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
     def this(cp: CpanPackage) = this {
       val sb = new java.lang.StringBuilder
-      sb append s"""  ${cp.suggestedNixpkgsName} = ${if (cp.isModule) "buildPerlModule" else "buildPerlPackage"} rec {\n"""
+      sb append s"""  ${cp.suggestedNixpkgsName} = ${if (cp.isModule) "buildPerlModule" else "buildPerlPackage"} {\n"""
       sb append s"""    name = "${cp.name}-${cp.version}";\n"""
       sb append s"""    src = fetchurl {\n"""
       sb append s"""      url = mirror://cpan/authors/id/${cp.path};\n"""
@@ -960,6 +959,10 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
 
 object Cpan2Nix {
+  // todo: command-line switches
+  val doCheckout  = false
+  val doUpgrade   = false
+  val doTestBuild = true
   val forceLocalBuild = false
   val worker          = "root@172.16.0.161"
   val NIX_SSHOPTS     = "-p922" :: Nil
@@ -971,18 +974,21 @@ object Cpan2Nix {
       case Array()                   => main(Array("--repopath", "./nixpkgs-repo"))
       case Array("--repopath", path) =>
         val repopath: File = new File(path)
-        if (!repopath.exists) {
-          require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
-        } else {
-          require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
-//        require(Process("git" :: "fetch" :: "origin" :: "master"  :: Nil, cwd = repopath).! == 0)
-        }
 
-        val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
-        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
-//tmp   require(Process("git" :: "merge"               :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
-        require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
-        require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
+        if (doCheckout) {
+          if (!repopath.exists) {
+            require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
+          } else {
+            require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
+//          require(Process("git" :: "fetch" :: "origin" :: "master"  :: Nil, cwd = repopath).! == 0)
+          }
+
+          val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
+          require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
+//tmp     require(Process("git" :: "merge"               :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
+        }
 
         val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
 
@@ -1037,85 +1043,110 @@ object Cpan2Nix {
           }
         })
 
-
         val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl522", version="5.22")
         val pullRequester = new PullRequester(repopath, theOldestSupportedPerl)
 
-
-        val toupdate = nixPkgs.allPackages sortBy { case np if np.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
-                                                    case np if np.name.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
-                                                    case np                                                => canUpgrade(np) match {
-                                                                                                                case Some(cp) => (10, pullRequester.allDeps(cp).size)  // then smaller first
-                                                                                                                case None     => (20, 0)
-                                                                                                              }
-                                                  }
-/*
-        val toupdate = nixPkgs.allPackages filter (_.name == Name("Tie-Hash-Indexed"))
-*/
-
-        val totest = List.newBuilder[String]
-
-        for (np      <- toupdate;
-             cp      <- canUpgrade(np);
-             message <- pullRequester.prepareCommit(np, cp)) {
-          println("----")
-          println(message)
-
-          totest += pullRequester.nixifiedName(cp)
-
-          Process("git" :: "commit" :: "-m" :: s"[cpan2nix] $message" :: "pkgs/top-level/perl-packages.nix" :: Nil,
-                  cwd = repopath).!
+        // compare results of evaluation pkgs.perlPackages (nixPkgs.allPackages) and parsing of perl-packages.nix (pullRequester.buildPerlPackageBlocks)
+        for (np <- nixPkgs.allPackages if !pullRequester.buildPerlPackageBlocks.exists(_._2.name == np.name)) {
+          println(s"WARNING: evaluated but not parsed (probably not in perl-packages.nix): $np")
+        }
+        for ((_, bppb) <- pullRequester.buildPerlPackageBlocks if !nixPkgs.allPackages.exists(_.name == bppb.name)) {
+          println(s"WARNING: parsed but not evaluated (probably not from CPAN): perlPackages.${bppb.nixpkgsName}")
         }
 
 
-        // try to build
-        val nixcode = s"""|let
-                          |  pkgs = import <nixpkgs> { };
-                          |in
-                          |  pkgs.lib.filter (x: x != null) [
-                          |    ${totest.result flatMap (npname => List( s"pkgs.perlPackages.${npname}"
-                                                                  // , s"pkgs.pkgsi686Linux.perlPackages.${npname}"
-                                                                      )) mkString "\n    "}
-                          |  ]
-                          |""".stripMargin
-        println(nixcode)
+        if (doUpgrade) {
+          val toupdate = nixPkgs.allPackages sortBy { case np if np.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
+                                                      case np if np.name.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
+                                                      case np                                                => canUpgrade(np) match {
+                                                                                                                  case Some(cp) => (10, pullRequester.allDeps(cp).size)  // then smaller first
+                                                                                                                  case None     => (20, 0)
+                                                                                                                }
+                                                    }
+/*
+          val toupdate = nixPkgs.allPackages filter (_.name == Name("Tie-Hash-Indexed"))
+*/
 
-        if (!forceLocalBuild) {
-               val    drvs = Process( "nix-instantiate"
-                                   :: "--show-trace"
-                                   :: "-E" :: nixcode :: Nil,
-                                   cwd = repopath,
-                                   "NIXPKGS_CONFIG" -> "",
-                                   "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
-                                   ).!!.split('\n').toList
-          lazy val alldrvs = Process("nix-store" :: "-qR" :: drvs).!!.split('\n').toList
+          for (np      <- toupdate;
+               cp      <- canUpgrade(np);
+               message <- pullRequester.prepareCommit(np, cp)) {
+            println("----")
+            println(message)
 
-          // needs https://github.com/NixOS/nix/pull/2205
-          //Process("nix" :: "copy" :: "-v" :: "--recursive" :: "--to" :: "ssh://"+worker :: drvs,
-          //        cwd = repopath,
-          //        "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
-          Process("nix-copy-closure" :: "-v" :: "--to" :: worker :: drvs,
-                  cwd = repopath,
-                  "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
+            Process("git" :: "commit" :: "-m" :: s"[cpan2nix] $message" :: "pkgs/top-level/perl-packages.nix" :: Nil,
+                    cwd = repopath).!
+          }
+        }
 
-          Process("ssh" :: NIX_SSHOPTS ::: worker :: "--" :: "nix-store" :: "--realise" :: s"-j${Cpan2Nix.concurrency}" :: "-k" :: drvs).!
 
-          /* copy the results back
-          Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: worker :: drvs,
-                  cwd = repopath,
-                  "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
-          */
-        } else {
-          val exitCode = Process( "nix-build"
-                               :: "--option"   :: "binary-caches" :: "http://cache.nixos.org/"
-                               :: "--builders" :: ""
-                               :: "--show-trace"
-                               :: "--keep-failed" :: "-E" :: nixcode :: Nil,
-                                  cwd = repopath,
-                                  "NIXPKGS_CONFIG" -> "",
-                                  "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
-                               ).!
-          require(exitCode == 0)
+        if (doTestBuild) {
+          // try to build
+          val nixcode = s"""|let
+                            |  lib = (import <nixpkgs> {}).lib;
+                            |  # do the build als ob the perl version is bumped
+                            |  pkgs524 = import <nixpkgs> { overlays = [ (self: super: { perl = self.perl524; }) ]; };
+                            |  pkgs526 = import <nixpkgs> { overlays = [ (self: super: { perl = self.perl526; }) ]; };
+                            |  pkgs528 = import <nixpkgs> { overlays = [ (self: super: { perl = self.perl528; }) ]; };
+                            |in
+                            |  lib.filter (x: x != null) (
+                            |    lib.concatMap (pkgs: [ pkgs.perl522 pkgs.perl524 pkgs.perl526 pkgs.perl528 ] ++
+                            |                         (with pkgs.perlPackages; [
+                            |                           ${pullRequester.buildPerlPackageBlocks flatMap {
+                                                           case ( "CatalystEngineHTTPPrefork"  // do not test the packages known as broken
+                                                                | "CatalystPluginHTMLWidget"
+                                                                | "DevelSizeMe"
+                                                                | "MacPasteboard"
+                                                                | "UnicodeICUCollator"
+                                                                | "RegexpCopy"                  // 2003
+                                                                | "libfile-stripnondeterminism" // need manual upgrade
+                                                                | "strip-nondeterminism"
+                                                                , _)       => Nil
+                                                           case (name, bp) => List(bp.nixpkgsName)
+                                                          }  mkString "\n  "
+                                                        }
+                            |                         ])
+                            |                  ) [ pkgs524 pkgs526 pkgs528 ]
+                            |  )
+                            |""".stripMargin
+          println(nixcode)
+
+          if (!forceLocalBuild) {
+                 val    drvs = Process( "nix-instantiate"
+                                     :: "--show-trace"
+                                     :: "-E" :: nixcode :: Nil,
+                                     cwd = repopath,
+                                     "NIXPKGS_CONFIG" -> "",
+                                     "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
+                                     ).!!.split('\n').toList
+            lazy val alldrvs = Process("nix-store" :: "-qR" :: drvs).!!.split('\n').toList
+
+            // needs https://github.com/NixOS/nix/pull/2205
+            //Process("nix" :: "copy" :: "-v" :: "--recursive" :: "--to" :: "ssh://"+worker :: drvs,
+            //        cwd = repopath,
+            //        "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
+            Process("nix-copy-closure" :: "-v" :: "--to" :: worker :: drvs,
+                    cwd = repopath,
+                    "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
+
+            Process("ssh" :: NIX_SSHOPTS ::: worker :: "--" :: "nix-store" :: "--realise" :: s"-j${Cpan2Nix.concurrency}" :: "-k" :: drvs).!
+
+            /* copy the results back
+            Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: worker :: drvs,
+                    cwd = repopath,
+                    "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
+            */
+          } else {
+            val exitCode = Process( "nix-build"
+                                 :: "--option"   :: "binary-caches" :: "http://cache.nixos.org/"
+                                 :: "--builders" :: ""
+                                 :: "--show-trace"
+                                 :: "--keep-failed" :: "-E" :: nixcode :: Nil,
+                                    cwd = repopath,
+                                    "NIXPKGS_CONFIG" -> "",
+                                    "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
+                                 ).!
+            require(exitCode == 0)
+          }
         }
 
       case _ =>

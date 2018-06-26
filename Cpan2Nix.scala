@@ -523,7 +523,6 @@ object CpanErrata {
   val pinnedPackages           = Set( CpanPackage fromPath "N/NJ/NJH/MusicBrainz-DiscID-0.03.tar.gz"                 // need to review patchPhase manually
                                     , CpanPackage fromPath "D/DR/DROLSKY/MooseX-AttributeHelpers-0.23.tar.gz"        // nixpkgs has .patch file incompatible with newer versions
                                     , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"                // 2.15 seems broken
-                                    , CpanPackage fromPath "R/RU/RURBAN/B-C-1.54.tar.gz"                             // 1.55: No rule to make target 'subdirs-test_dynamic', needed by 'test'
                                     , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11 test failed
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
                                     )
@@ -964,8 +963,8 @@ object Cpan2Nix {
   val doUpgrade   = false
   val doTestBuild = true
   val forceLocalBuild = false
-  val worker          = "root@172.16.0.161"
-  val NIX_SSHOPTS     = "-p922" :: "-v" :: Nil
+  val worker          = "172.16.0.161"
+  val NIX_SSHOPTS     = "-p922" :: Nil
   val concurrency     = 16
 
 
@@ -1082,30 +1081,48 @@ object Cpan2Nix {
         if (doTestBuild) {
           // try to build
           val nixcode = s"""|let
-                            |  lib = (import <nixpkgs> {}).lib;
+                            |  inherit (import <nixpkgs> {}) lib;
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs524 = import <nixpkgs> { overlays = [ (self: super: { perl = self.perl524; }) ]; };
-                            |  pkgs526 = import <nixpkgs> { overlays = [ (self: super: { perl = self.perl526; }) ]; };
-                            |  pkgs528 = import <nixpkgs> { overlays = [ (self: super: { perl = self.perl528; }) ]; };
+                            |  pkgs524 = import <nixpkgs> { overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
+                            |  pkgs526 = import <nixpkgs> { overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
+                            |  pkgs528 = import <nixpkgs> { overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
                             |in
                             |  lib.filter (x: x != null) (
-                            |    lib.concatMap (pkgs: [ pkgs.perl522 pkgs.perl524 pkgs.perl526 pkgs.perl528 ] ++
-                            |                         (with pkgs.perlPackages; [
-                            |                           ${pullRequester.buildPerlPackageBlocks flatMap {
-                                                           case ( "CatalystEngineHTTPPrefork"  // do not test the packages known as broken
-                                                                | "CatalystPluginHTMLWidget"
-                                                                | "DevelSizeMe"
-                                                                | "MacPasteboard"
-                                                                | "UnicodeICUCollator"
-                                                                | "RegexpCopy"                  // 2003
-                                                                | "libfile-stripnondeterminism" // need manual upgrade
-                                                                | "strip-nondeterminism"
-                                                                , _)       => Nil
-                                                           case (name, bp) => List(bp.nixpkgsName)
-                                                          }  mkString "\n  "
-                                                        }
+                            |    lib.concatMap (pp: # [ pkgs.perl522 pkgs.perl524 pkgs.perl526 pkgs.perl528 ] ++
+                            |                         (with pp; [
+                            |                            pp.perl
+                            |                            pp.BerkeleyDB
+                            |                            pp.CompressRawZlib
+                            |                            pp.DBDSQLite
+                            |                            pp.DBDmysql
+                            |                            pp.DBDPg
+                            |                            pp.DBDsybase
+                            |                            pp.DBFile
+                            |                            pp.maatkit
+                            |                            pp.MNI-Perllib
+                            |                            ${ pullRequester.buildPerlPackageBlocks flatMap {
+                                                              case ( "CatalystEngineHTTPPrefork"  // do not test the packages known as broken
+                                                                   | "CatalystPluginHTMLWidget"
+                                                                   | "DevelSizeMe"
+                                                                   | "MacPasteboard"
+                                                                   | "UnicodeICUCollator"
+                                                                   | "RegexpCopy"                  // 2003
+                                                                   | "libfile-stripnondeterminism" // need manual upgrade
+                                                                   | "strip-nondeterminism"
+                                                                   , _)       => Nil
+                                                              case (name, bp) => List(bp.nixpkgsName)
+                                                            } mkString "\n  "
+                                                         }
                             |                         ])
-                            |                  ) [ pkgs524 pkgs526 pkgs528 ]
+                            |                  ) [ # pkgs524.perl522Packages
+                            |                      # pkgs524.perlPackages
+                            |                      # pkgs524.perl526Packages
+                            |                      # pkgs524.perl528Packages
+                            |                      # pkgs526.perl522Packages
+                            |                      # pkgs526.perl524Packages
+                            |                        pkgs526.perlPackages
+                            |                      # pkgs526.perl528Packages
+                            |                    ]
                             |  )
                             |""".stripMargin
           println(nixcode)
@@ -1121,25 +1138,25 @@ object Cpan2Nix {
             lazy val alldrvs = Process("nix-store" :: "-qR" :: drvs).!!.split('\n').toList
 
             // needs https://github.com/NixOS/nix/pull/2205
-            //Process("nix" :: "copy" :: "-v" :: "--recursive" :: "--to" :: "ssh://"+worker :: drvs,
+            //Process("nix" :: "copy" :: "-v" :: "--recursive" :: "--to" :: s"ssh://root$worker" :: drvs,
             //        cwd = repopath,
             //        "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
-            Process("nix-copy-closure" :: "-v" :: "--to" :: worker :: drvs,
+            Process("nix-copy-closure" :: "-v" :: "--to" :: s"root@$worker" :: drvs,
                     cwd = repopath,
                     "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
 
             for (slice <- drvs.sliding(4000,4000)) { // avoid too long command line
-              Process("ssh" :: NIX_SSHOPTS ::: worker :: "--" :: "nix-store" :: "--realise" :: s"-j${Cpan2Nix.concurrency}" :: "-k" :: slice).!
+              Process("ssh" :: NIX_SSHOPTS ::: s"root@$worker" :: "--" :: "nix-store" :: "--realise" :: s"-j${Cpan2Nix.concurrency}" :: "-k" :: slice).!
             }
 
             /* copy the results back
-            Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: worker :: drvs,
+            Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: s"root@$worker" :: drvs,
                     cwd = repopath,
                     "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
             */
           } else {
             val exitCode = Process( "nix-build"
-                                 :: "--option"   :: "binary-caches" :: "http://cache.nixos.org/"
+                                 :: "--option"   :: "binary-caches" :: s"http://$worker:44444/ http://cache.nixos.org/"
                                  :: "--builders" :: ""
                                  :: "--show-trace"
                                  :: "--keep-failed" :: "-E" :: nixcode :: Nil,

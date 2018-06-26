@@ -965,7 +965,7 @@ object Cpan2Nix {
   val doTestBuild = true
   val forceLocalBuild = false
   val worker          = "root@172.16.0.161"
-  val NIX_SSHOPTS     = "-p922" :: Nil
+  val NIX_SSHOPTS     = "-p922" :: "-v" :: Nil
   val concurrency     = 16
 
 
@@ -1128,7 +1128,9 @@ object Cpan2Nix {
                     cwd = repopath,
                     "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
 
-            Process("ssh" :: NIX_SSHOPTS ::: worker :: "--" :: "nix-store" :: "--realise" :: s"-j${Cpan2Nix.concurrency}" :: "-k" :: drvs).!
+            for (slice <- drvs.sliding(4000,4000)) { // avoid too long command line
+              Process("ssh" :: NIX_SSHOPTS ::: worker :: "--" :: "nix-store" :: "--realise" :: s"-j${Cpan2Nix.concurrency}" :: "-k" :: slice).!
+            }
 
             /* copy the results back
             Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: worker :: drvs,

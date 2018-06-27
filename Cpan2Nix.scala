@@ -1177,7 +1177,7 @@ object Cpan2Nix {
           } else {
                     for (drvs <- instantiateDrvs;
                          // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
-                         _    <- Task.wander(drvs.sliding(1000,1000)) { slice =>
+                         _    <- Task.traverse(drvs.sliding(1000,1000)) { slice =>
                                    Task {
                                      require(Process( "nix-store" :: "--realise" :: "--ignore-unknown"
                                                    :: "--option"  :: "binary-caches" :: s"http://$worker:44444/ http://cache.nixos.org/"

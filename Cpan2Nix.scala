@@ -19,7 +19,11 @@ import scala.sys.process._
 import scala.util.{Try, Failure, Success}
 import scala.collection.JavaConverters._
 
-
+import scala.concurrent.duration._
+import scala.concurrent.Await
+import `io.monix::monix:3.0.0-RC1`
+import monix.eval.Task
+import monix.execution.Scheduler
 
 class Version(s: String) extends Ordered[Version] {
 //require(s exists (c => '0'<=c && c<='9'), s"Version `$s' is expected to contain at least a digit")
@@ -608,12 +612,12 @@ object Cpan {
 class PerlDerivation(repopath: File, name: String /* = "perl522"*/, val version: String /* = "5.22"*/) {
   private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
-                                       :: (if (Cpan2Nix.forceLocalBuild)
-                                             Nil
-                                           else
+                                       :: (if (Cpan2Nix.remoteBuild)
                                                 "--option" :: "builders-use-substitutes" :: "true"
                                              :: "--builders" :: s"ssh://${Cpan2Nix.worker} x86_64-linux /home/user/.ssh/id_ed25519 ${Cpan2Nix.concurrency} ${Cpan2Nix.concurrency} kvm,big-parallel"
-                                             :: Nil)
+                                             :: Nil
+                                           else
+                                                Nil)
                                       ::: "-E" :: s"(import <nixpkgs> { }).$name" :: Nil,
                                           cwd = repopath,
                                           "NIXPKGS_CONFIG" -> "",
@@ -962,10 +966,11 @@ object Cpan2Nix {
   val doCheckout  = false
   val doUpgrade   = false
   val doTestBuild = true
-  val forceLocalBuild = false
-  val worker          = "172.16.0.161"
-  val NIX_SSHOPTS     = "-p922" :: Nil
-  val concurrency     = 16
+
+  val remoteBuild = true
+  val worker      = "172.16.2.11" // "172.16.0.161"
+  val NIX_SSHOPTS = "-p922" :: "-t" :: Nil
+  val concurrency = 16
 
 
   def main(args: Array[String]) {
@@ -1088,18 +1093,20 @@ object Cpan2Nix {
                             |  pkgs528 = import <nixpkgs> { overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
                             |in
                             |  lib.filter (x: x != null) (
-                            |    lib.concatMap (pp: # [ pkgs.perl522 pkgs.perl524 pkgs.perl526 pkgs.perl528 ] ++
-                            |                         (with pp; [
-                            |                            pp.perl
-                            |                            pp.BerkeleyDB
-                            |                            pp.CompressRawZlib
-                            |                            pp.DBDSQLite
-                            |                            pp.DBDmysql
-                            |                            pp.DBDPg
-                            |                            pp.DBDsybase
-                            |                            pp.DBFile
-                            |                            pp.maatkit
-                            |                            pp.MNI-Perllib
+                            |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra pkgs.nix1 ])
+                            |                         [ pkgs524 pkgs526 pkgs528 ])
+                            |   ++
+                            |   (lib.concatMap (pp:   (with pp; [
+                            |                            perl
+                            |                            BerkeleyDB
+                            |                            CompressRawZlib
+                            |                            DBDSQLite
+                            |                            DBDmysql
+                            |                            DBDPg
+                            |                            DBDsybase
+                            |                            DBFile
+                            |                            maatkit
+                            |                            MNI-Perllib
                             |                            ${ pullRequester.buildPerlPackageBlocks flatMap {
                                                               case ( "CatalystEngineHTTPPrefork"  // do not test the packages known as broken
                                                                    | "CatalystPluginHTMLWidget"
@@ -1111,60 +1118,73 @@ object Cpan2Nix {
                                                                    | "strip-nondeterminism"
                                                                    , _)       => Nil
                                                               case (name, bp) => List(bp.nixpkgsName)
-                                                            } mkString "\n  "
+                                                            } mkString " "
                                                          }
                             |                         ])
-                            |                  ) [ # pkgs524.perl522Packages
-                            |                      # pkgs524.perlPackages
-                            |                      # pkgs524.perl526Packages
-                            |                      # pkgs524.perl528Packages
-                            |                      # pkgs526.perl522Packages
-                            |                      # pkgs526.perl524Packages
+                            |                  ) [   pkgs524.perl522Packages
+                            |                        pkgs524.perlPackages
+                            |                        pkgs524.perl526Packages
+                            |                        pkgs524.perl528Packages
+                            |
+                            |                        pkgs526.perl522Packages
+                            |                        pkgs526.perl524Packages
                             |                        pkgs526.perlPackages
-                            |                      # pkgs526.perl528Packages
-                            |                    ]
+                            |                        pkgs526.perl528Packages
+                            |
+                            |                        pkgs528.perl522Packages
+                            |                        pkgs528.perl524Packages
+                            |                        pkgs528.perl526Packages
+                            |                        pkgs528.perlPackages
+                            |                    ])
                             |  )
                             |""".stripMargin
           println(nixcode)
 
-          if (!forceLocalBuild) {
-                 val    drvs = Process( "nix-instantiate"
-                                     :: "--show-trace"
-                                     :: "-E" :: nixcode :: Nil,
-                                     cwd = repopath,
-                                     "NIXPKGS_CONFIG" -> "",
-                                     "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
-                                     ).!!.split('\n').toList
-            lazy val alldrvs = Process("nix-store" :: "-qR" :: drvs).!!.split('\n').toList
+          if (remoteBuild) {
+            val t = for (drvs <- Task( Process( "nix-instantiate"
+                                             :: "--show-trace"
+                                             :: "-E" :: nixcode :: Nil,
+                                             cwd = repopath,
+                                             "NIXPKGS_CONFIG" -> "",
+                                             "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
+                                             ).!!.split('\n').toList );
 
-            // needs https://github.com/NixOS/nix/pull/2205
-            //Process("nix" :: "copy" :: "-v" :: "--recursive" :: "--to" :: s"ssh://root$worker" :: drvs,
-            //        cwd = repopath,
-            //        "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
-            Process("nix-copy-closure" :: "-v" :: "--to" :: s"root@$worker" :: drvs,
-                    cwd = repopath,
-                    "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
+                          // needs https://github.com/NixOS/nix/pull/2205
+                          //Process("nix" :: "copy" :: "-v" :: "--recursive" :: "--to" :: s"ssh://root$worker" :: drvs,
+                          //        cwd = repopath,
+                          //        "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
+                         _ <- Task(require(Process("nix-copy-closure" :: "-v" :: "--to" :: s"root@$worker" :: drvs,
+                                                   cwd = repopath,
+                                                    "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).! == 0));
 
-            for (slice <- drvs.sliding(4000,4000)) { // avoid too long command line
-              Process("ssh" :: NIX_SSHOPTS ::: s"root@$worker" :: "--" :: "nix-store" :: "--realise" :: s"-j${Cpan2Nix.concurrency}" :: "-k" :: slice).!
-            }
-
-            /* copy the results back
-            Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: s"root@$worker" :: drvs,
-                    cwd = repopath,
-                    "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
-            */
+                         // split `drvs` to avoid too long command line
+                         _ <- Task.wander(drvs.sliding(2000,2000)) { slice =>
+                                Task {
+                                  require(Process("ssh" :: NIX_SSHOPTS ::: s"root@$worker" :: "--"
+                                               :: "nix-store" :: "--realise"
+                                               :: s"-j${Cpan2Nix.concurrency}"
+                                               :: "-k"
+                                               :: slice).! == 0)
+                                }
+                              }
+                        /* copy the results back
+                         _ <- Task( require(Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: s"root@$worker" :: drvs,
+                                                    cwd = repopath,
+                                                    "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).! == 0)
+                        */
+                              ) yield ()
+            val io = Scheduler.io("my-io") // do not limit parallelism with number of local cpus
+            Await.result(t.runAsync(io), 10.hours)
           } else {
-            val exitCode = Process( "nix-build"
-                                 :: "--option"   :: "binary-caches" :: s"http://$worker:44444/ http://cache.nixos.org/"
-                                 :: "--builders" :: ""
-                                 :: "--show-trace"
-                                 :: "--keep-failed" :: "-E" :: nixcode :: Nil,
-                                    cwd = repopath,
-                                    "NIXPKGS_CONFIG" -> "",
-                                    "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
-                                 ).!
-            require(exitCode == 0)
+            require(Process( "nix-build"
+                           :: "--option"   :: "binary-caches" :: s"http://$worker:44444/ http://cache.nixos.org/"
+                           :: "--builders" :: ""
+                           :: "--show-trace"
+                           :: "--keep-failed" :: "-E" :: nixcode :: Nil,
+                              cwd = repopath,
+                              "NIXPKGS_CONFIG" -> "",
+                              "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
+                           ).! == 0)
           }
         }
 

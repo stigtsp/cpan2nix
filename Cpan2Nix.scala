@@ -1086,11 +1086,11 @@ object Cpan2Nix {
         if (doTestBuild) {
           // try to build
           val nixcode = s"""|let
-                            |  inherit (import <nixpkgs> {}) lib;
                             |  # do the build als ob the perl version is bumped
                             |  pkgs524 = import <nixpkgs> { overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
                             |  pkgs526 = import <nixpkgs> { overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
                             |  pkgs528 = import <nixpkgs> { overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
+                            |  inherit (pkgs524) lib;
                             |in
                             |  lib.filter (x: x != null) (
                             |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra pkgs.nix1 ])
@@ -1140,30 +1140,31 @@ object Cpan2Nix {
                             |""".stripMargin
           println(nixcode)
 
-          if (remoteBuild) {
-            val t = for (drvs <- Task( Process( "nix-instantiate"
-                                             :: "--show-trace"
-                                             :: "-E" :: nixcode :: Nil,
-                                             cwd = repopath,
-                                             "NIXPKGS_CONFIG" -> "",
-                                             "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
-                                             ).!!.split('\n').toList );
+          val instantiateDrvs = Task[List[String]](
+                                  Process( "nix-instantiate"
+                                           :: "--show-trace"
+                                           :: "-E" :: nixcode :: Nil,
+                                           cwd = repopath,
+                                           "NIXPKGS_CONFIG" -> "",
+                                           "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
+                                         ).!!.split('\n').toList
+                                )
 
-                          // needs https://github.com/NixOS/nix/pull/2205
-                          //Process("nix" :: "copy" :: "-v" :: "--recursive" :: "--to" :: s"ssh://root$worker" :: drvs,
-                          //        cwd = repopath,
-                          //        "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).!
+          val t = if (remoteBuild) {
+                    for (drvs <-  instantiateDrvs;
+
                          _ <- Task(require(Process("nix-copy-closure" :: "-v" :: "--to" :: s"root@$worker" :: drvs,
                                                    cwd = repopath,
                                                     "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).! == 0));
 
-                         // split `drvs` to avoid too long command line
-                         _ <- Task.wander(drvs.sliding(2000,2000)) { slice =>
+                         // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
+                         _ <- Task.wander(drvs.sliding(1000,1000)) { slice =>
                                 Task {
                                   require(Process("ssh" :: NIX_SSHOPTS ::: s"root@$worker" :: "--"
-                                               :: "nix-store" :: "--realise"
+                                               :: "nix-store" :: "--realise" :: "--ignore-unknown"
+                                               :: "--option"   :: "binary-caches" :: "http://cache.nixos.org/"
                                                :: s"-j${Cpan2Nix.concurrency}"
-                                               :: "-k"
+                                               :: "--keep-going"
                                                :: slice).! == 0)
                                 }
                               }
@@ -1172,20 +1173,22 @@ object Cpan2Nix {
                                                     cwd = repopath,
                                                     "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).! == 0)
                         */
-                              ) yield ()
-            val io = Scheduler.io("my-io") // do not limit parallelism with number of local cpus
-            Await.result(t.runAsync(io), 10.hours)
+                        ) yield ()
           } else {
-            require(Process( "nix-build"
-                           :: "--option"   :: "binary-caches" :: s"http://$worker:44444/ http://cache.nixos.org/"
-                           :: "--builders" :: ""
-                           :: "--show-trace"
-                           :: "--keep-failed" :: "-E" :: nixcode :: Nil,
-                              cwd = repopath,
-                              "NIXPKGS_CONFIG" -> "",
-                              "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}"
-                           ).! == 0)
+                    for (drvs <- instantiateDrvs;
+                         // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
+                         _    <- Task.wander(drvs.sliding(1000,1000)) { slice =>
+                                   Task {
+                                     require(Process( "nix-store" :: "--realise" :: "--ignore-unknown"
+                                                   :: "--option"  :: "binary-caches" :: s"http://$worker:44444/ http://cache.nixos.org/"
+                                                   :: "--keep-failed"
+                                                   :: slice).! == 0)
+                                   }
+                                 }
+                        ) yield ()
           }
+          val io = Scheduler.io("my-io") // do not limit parallelism with number of local cpus
+          Await.result(t.runAsync(io), 10.hours)
         }
 
       case _ =>

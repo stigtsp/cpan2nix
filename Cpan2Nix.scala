@@ -1087,12 +1087,12 @@ object Cpan2Nix {
           // try to build
           val nixcode = s"""|let
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs524 = import <nixpkgs> { overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
-                            |  pkgs526 = import <nixpkgs> { overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
-                            |  pkgs528 = import <nixpkgs> { overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
+                            |  pkgs524 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
+                            |  pkgs526 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
+                            |  pkgs528 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
                             |  inherit (pkgs524) lib;
                             |in
-                            |  lib.filter (x: x != null) (
+                            |  lib.filter (x: (x != null) && x.meta.available) (
                             |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra pkgs.nix1 ])
                             |                         [ pkgs524 pkgs526 pkgs528 ])
                             |   ++
@@ -1108,12 +1108,7 @@ object Cpan2Nix {
                             |                            maatkit
                             |                            MNI-Perllib
                             |                            ${ pullRequester.buildPerlPackageBlocks flatMap {
-                                                              case ( "CatalystEngineHTTPPrefork"  // do not test the packages known as broken
-                                                                   | "CatalystPluginHTMLWidget"
-                                                                   | "DevelSizeMe"
-                                                                   | "MacPasteboard"
-                                                                   | "UnicodeICUCollator"
-                                                                   | "RegexpCopy"                  // 2003
+                                                              case ( "RegexpCopy"                  // 2003
                                                                    | "libfile-stripnondeterminism" // need manual upgrade
                                                                    | "strip-nondeterminism"
                                                                    , _)       => Nil
@@ -1166,7 +1161,7 @@ object Cpan2Nix {
                                                :: s"-j${Cpan2Nix.concurrency}"
                                                :: "--keep-going"
                                                :: slice).! == 0)
-                                }
+                                }.materialize
                               }
                         /* copy the results back
                          _ <- Task( require(Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: s"root@$worker" :: drvs,
@@ -1180,7 +1175,7 @@ object Cpan2Nix {
                          _    <- Task.traverse(drvs.sliding(1000,1000)) { slice =>
                                    Task {
                                      require(Process( "nix-store" :: "--realise" :: "--ignore-unknown"
-                                                   :: "--option"  :: "binary-caches" :: s"http://$worker:44444/ http://cache.nixos.org/"
+                                                   :: "--option"  :: "binary-caches" :: /* http://$worker:44444/ */ s"http://cache.nixos.org/"
                                                    :: "--keep-failed"
                                                    :: slice).! == 0)
                                    }

@@ -95,35 +95,33 @@ class License(s: String) {
   override def toString                = s
 }
 object License {
-  def fromString(s: String): Set[License] = s match {
+  def fromString(s: String): Set[License] = s.stripPrefix("https://").stripPrefix("http://").stripPrefix("www.").stripSuffix(".php").stripSuffix(".html").stripSuffix(".txt") match {
     case null
-       | "unknown"                                                                      => Set.empty
-    case "perl_5"       | "http://dev.perl.org/licenses/"
-       | "perl"         | "http://opensource.org/licenses/Perl"                         => Set(new License("artistic1"), new License("gpl1Plus"))
-    case "open_source"                                                                  => Set(new License("free"))
-    case "gpl_1"        | "http://opensource.org/licenses/gpl-license.php"
-       | "gpl"          | "http://www.gnu.org/licenses/gpl.html"                        => Set(new License("gpl1Plus"))
-    case "gpl_2"        | "http://opensource.org/licenses/gpl-2.0.php"
-       | "gpl2"         | "http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt"        => Set(new License("gpl2Plus"))
-    case "lgpl_2_1"     | "http://www.gnu.org/licenses/lgpl-2.1.html"
-       | "lgpl"         | "http://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt"       => Set(new License("lgpl21Plus"))
-    case "lgpl_3_0"                                                                     => Set(new License("lgpl3Plus"))
-    case "gpl_3"        | "http://www.gnu.org/licenses/gpl-3.0.txt"                     => Set(new License("gpl3Plus"))
-    case "mozilla"      | "http://opensource.org/licenses/mozilla1.1.php"               => Set(new License("mpl11"))
-    case "apache_2_0"                                                                   => Set(new License("asl20"))
-    case "artistic_1"   | "http://opensource.org/licenses/artistic-license.php"
-       | "artistic"                                                                     => Set(new License("artistic1"))
-    case "artistic_2"   | "http://www.opensource.org/licenses/artistic-license-2.0.php"
-                        | "http://www.opensource.org/licenses/artistic-license-2.0"
-                        | "http://opensource.org/licenses/Artistic-2.0"
-                        | "http://www.perlfoundation.org/artistic_license_2_0"          => Set(new License("artistic2"))
-    case "mit"          | "http://www.opensource.org/licenses/mit-license.php"
-                        | "http://opensource.org/licenses/mit-license.php"              => Set(new License("mit"))
-    case                  "https://wiki.creativecommons.org/wiki/Public_domain"         => Set(new License("cc0"))
-    case "unrestricted"                                                                 => Set(new License("wtfpl"))
-    case "bsd"          | "http://opensource.org/licenses/bsd-license.php"              => Set(new License("bsd3"))
-    case x                                                                              => println(s"unknown license `$x'"); sys.exit(1)
-                                                                                           Set.empty
+       | "unknown"                                                       => Set.empty
+    case "perl_5"       | "dev.perl.org/licenses/"
+       | "perl"         | "opensource.org/licenses/Perl"                 => Set(new License("artistic1"), new License("gpl1Plus"))
+    case "open_source"                                                   => Set(new License("free"))
+    case "gpl_1"        | "opensource.org/licenses/gpl-license"
+       | "gpl"          | "gnu.org/licenses/gpl"                         => Set(new License("gpl1Plus"))
+    case "gpl_2"        | "opensource.org/licenses/gpl-2.0"
+       | "gpl2"         | "gnu.org/licenses/old-licenses/gpl-2.0"        => Set(new License("gpl2Plus"))
+    case "lgpl_2_1"     | "gnu.org/licenses/lgpl-2.1"
+       | "lgpl"         | "gnu.org/licenses/old-licenses/lgpl-2.1"       => Set(new License("lgpl21Plus"))
+    case "lgpl_3_0"                                                      => Set(new License("lgpl3Plus"))
+    case "gpl_3"        | "gnu.org/licenses/gpl-3.0"                     => Set(new License("gpl3Plus"))
+    case "mozilla"      | "opensource.org/licenses/mozilla1.1"           => Set(new License("mpl11"))
+    case "apache_2_0"                                                    => Set(new License("asl20"))
+    case "artistic_1"   | "opensource.org/licenses/artistic-license"
+       | "artistic"                                                      => Set(new License("artistic1"))
+    case "artistic_2"   | "opensource.org/licenses/artistic-license-2.0"
+                        | "opensource.org/licenses/Artistic-2.0"
+                        | "perlfoundation.org/artistic_license_2_0"      => Set(new License("artistic2"))
+    case "mit"          | "opensource.org/licenses/mit-license"          => Set(new License("mit"))
+    case                  "wiki.creativecommons.org/wiki/Public_domain"  => Set(new License("cc0"))
+    case "unrestricted"                                                  => Set(new License("wtfpl"))
+    case "bsd"          | "opensource.org/licenses/bsd-license"          => Set(new License("bsd3"))
+    case x                                                               => println(s"unknown license `$x'"); sys.exit(1)
+                                                                            Set.empty
   }
 }
 
@@ -365,7 +363,6 @@ object CpanErrata {
 
   // *** do not add to nixpkgs dependencies present on cpan
   val dependenciesToBreak      = Map( Name("ack"                              ) -> Set( Name("Test-Harness"))               // complex buildInputs expression, need to update manually
-                                    , Name("File-ShareDir"                    ) -> Set( Name("File-ShareDir-Install"))      // circular dependency
                                     , Name("MooX-Options"                     ) -> Set( Name("MooX-ConfigFromFile"))        // circular dependency
                                     , Name("Plack"                            ) -> Set( Name("CGI-Compile"))                // to disable failing test
                                     , Name("Test-CleanNamespaces"             ) -> Set( Name("Moose")
@@ -964,11 +961,11 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 object Cpan2Nix {
   // todo: command-line switches
   val doCheckout  = false
-  val doUpgrade   = false
+  val doUpgrade   = true
   val doTestBuild = true
 
   val remoteBuild = true
-  val worker      = "172.16.2.11" // "172.16.0.161"
+  val worker      = "eus2.dmz" // "172.16.0.161"
   val NIX_SSHOPTS = "-p922" :: "-t" :: Nil
   val concurrency = 16
 
@@ -1087,14 +1084,15 @@ object Cpan2Nix {
           // try to build
           val nixcode = s"""|let
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs524 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
-                            |  pkgs526 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
-                            |  pkgs528 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
-                            |  inherit (pkgs524) lib;
+                            |  pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; };
+                            |# pkgs524 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
+                            |# pkgs526 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
+                            |# pkgs528 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
+                            |  inherit (pkgs/*524*/) lib;
                             |in
                             |  lib.filter (x: (x != null) && x.meta.available) (
                             |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra pkgs.nix1 ])
-                            |                         [ pkgs524 pkgs526 pkgs528 ])
+                            |                         [ pkgs/*524 pkgs526 pkgs528*/ ])
                             |   ++
                             |   (lib.concatMap (pp:   (with pp; [
                             |                            perl
@@ -1116,20 +1114,22 @@ object Cpan2Nix {
                                                             } mkString " "
                                                          }
                             |                         ])
-                            |                  ) [   pkgs524.perl522Packages
-                            |                        pkgs524.perlPackages
-                            |                        pkgs524.perl526Packages
-                            |                        pkgs524.perl528Packages
+                            |                  ) [    pkgs.perlPackages
                             |
-                            |                        pkgs526.perl522Packages
-                            |                        pkgs526.perl524Packages
-                            |                        pkgs526.perlPackages
-                            |                        pkgs526.perl528Packages
+                            |                       # pkgs524.perl522Packages
+                            |                       # pkgs524.perlPackages
+                            |                       # pkgs524.perl526Packages
+                            |                       # pkgs524.perl528Packages
                             |
-                            |                        pkgs528.perl522Packages
-                            |                        pkgs528.perl524Packages
-                            |                        pkgs528.perl526Packages
-                            |                        pkgs528.perlPackages
+                            |                       # pkgs526.perl522Packages
+                            |                       # pkgs526.perl524Packages
+                            |                       # pkgs526.perlPackages
+                            |                       # pkgs526.perl528Packages
+                            |
+                            |                       # pkgs528.perl522Packages
+                            |                       # pkgs528.perl524Packages
+                            |                       # pkgs528.perl526Packages
+                            |                       # pkgs528.perlPackages
                             |                    ])
                             |  )
                             |""".stripMargin

@@ -526,6 +526,7 @@ object CpanErrata {
                                     , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"                // 2.15 seems broken
                                     , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11 test failed
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
+                                    , CpanPackage fromPath "S/SA/SATOH/Test-Time-0.05.tar.gz"                        // 0.06 test failed
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -960,7 +961,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
 object Cpan2Nix {
   // todo: command-line switches
-  val doCheckout  = false
+  val doCheckout  = true
   val doUpgrade   = true
   val doTestBuild = true
 

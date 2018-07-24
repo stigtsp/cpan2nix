@@ -345,7 +345,6 @@ object CpanErrata {
                                     , Name("Mac-SystemDirectory")                        -> ((_:Version) => true) // fails on linux, I cannot test
                                     , Name("Mac-Pasteboard")                             -> ((_:Version) => true) // fails on linux, I cannot test
                                     , Name("Regexp-Copy")                                -> ((_:Version) => true) // broken
-                                    , Name("SOAP-Lite")                                  -> ((_:Version) => true) // needs 'outputs = [ "out" "dev" ];'
                                     , Name("Catalyst-Engine-HTTP-Prefork")               -> ((_:Version) => true) // meta.broken = true
                                     , Name("Catalyst-Plugin-HTML-Widget")                -> ((_:Version) => true) // meta.broken = true
                                     , Name("Devel-SizeMe")                               -> ((_:Version) => true) // meta.broken = true

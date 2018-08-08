@@ -438,6 +438,7 @@ object CpanErrata {
                                     , Name("HTML-Tidy"                               ) -> Map( Mod("Test::Exception")                  -> Version("0"))
                                     , Name("HTTP-Response-Encoding"                  ) -> Map( Mod("LWP::UserAgent")                   -> Version("0"))
                                     , Name("IO-Socket-Timeout"                       ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("JSON"                                    ) -> Map( Mod("Test::Pod")                        -> Version("0")) // for optional test, oxij added in https://github.com/NixOS/nixpkgs/pull/44739
                                     , Name("Mail-Mbox-MessageParser"                 ) -> Map( Mod("File::Slurper")                    -> Version("0")
                                                                                              , Mod("Test::Pod")                        -> Version("0")
                                                                                              , Mod("Test::Pod::Coverage")              -> Version("0"))

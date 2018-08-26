@@ -965,12 +965,12 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
 object Cpan2Nix {
   // todo: command-line switches
-  val doCheckout  = true
-  val doUpgrade   = true
+  val doCheckout  = !true
+  val doUpgrade   = !true
   val doTestBuild = true
 
   val remoteBuild = true
-  val worker      = "eus2.dmz" // "172.16.0.161"
+  val worker      = "htz2.dmz"
   val NIX_SSHOPTS = "-p922" :: "-t" :: Nil
   val concurrency = 16
 
@@ -1089,15 +1089,15 @@ object Cpan2Nix {
           // try to build
           val nixcode = s"""|let
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; };
-                            |# pkgs524 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
-                            |# pkgs526 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
-                            |# pkgs528 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
-                            |  inherit (pkgs/*524*/) lib;
+                            |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; };
+                            |  pkgs524 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
+                            |  pkgs526 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
+                            |  pkgs528 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
+                            |  inherit (pkgs528) lib;
                             |in
                             |  lib.filter (x: (x != null) && x.meta.available) (
                             |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra pkgs.nix1 ])
-                            |                         [ pkgs/*524 pkgs526 pkgs528*/ ])
+                            |                         [ pkgs524 pkgs526 pkgs528 ])
                             |   ++
                             |   (lib.concatMap (pp:   (with pp; [
                             |                            perl
@@ -1119,10 +1119,10 @@ object Cpan2Nix {
                                                             } mkString " "
                                                          }
                             |                         ])
-                            |                  ) [    pkgs.perlPackages
+                            |                  ) [  # pkgs.perlPackages
                             |
                             |                       # pkgs524.perl522Packages
-                            |                       # pkgs524.perlPackages
+                            |                         pkgs524.perlPackages
                             |                       # pkgs524.perl526Packages
                             |                       # pkgs524.perl528Packages
                             |
@@ -1134,7 +1134,7 @@ object Cpan2Nix {
                             |                       # pkgs528.perl522Packages
                             |                       # pkgs528.perl524Packages
                             |                       # pkgs528.perl526Packages
-                            |                       # pkgs528.perlPackages
+                            |                         pkgs528.perlPackages
                             |                    ])
                             |  )
                             |""".stripMargin

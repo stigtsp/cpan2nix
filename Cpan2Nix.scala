@@ -372,8 +372,9 @@ object CpanErrata {
 
   // *** add to nixpkgs dependencies missing on cpan (usually due to missing .meta file; FIXME: look into Makefile.PL then)
   val extraBuildDependencies   = Map( Name("Autodia"                                 ) -> Map( Mod("DBI")                              -> Version("0"))
-                                    , Name("Array-FIFO"                              ) -> Map( Mod("Test::Trap")                       -> Version("0"),
-                                                                                               Mod("Test::Deep::NoTest")               -> Version("0"))
+                                    , Name("Array-FIFO"                              ) -> Map( Mod("Test::Trap")                       -> Version("0")
+                                                                                             , Mod("Test::Deep::NoTest")               -> Version("0"))
+                                    , Name("Archive-Zip"                             ) -> Map( Mod("Test::MockModule")                 -> Version("0"))
                                     , Name("Catalyst-Controller-POD"                 ) -> Map( Mod("inc::Module::Install")             -> Version("0"))
                                     , Name("Catalyst-Runtime"                        ) -> Map( Mod("Type::Tiny")                       -> Version("0"))
                                     , Name("Catalyst-Authentication-Store-DBIx-Class") -> Map( Mod("Test::Warn")                       -> Version("0"))
@@ -445,10 +446,10 @@ object CpanErrata {
                                     , Name("Module-Build-Pluggable-PPPort"           ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("Module-Info"                             ) -> Map( Mod("Test::Pod")                        -> Version("0")
                                                                                              , Mod("Test::Pod::Coverage")              -> Version("0"))
-                                    , Name("MooseX-Has-Options"                      ) -> Map( Mod("Test::Deep")                       -> Version("0"),
-                                                                                               Mod("Test::Differences")                -> Version("0"),
-                                                                                               Mod("Test::Exception")                  -> Version("0"),
-                                                                                               Mod("Test::Warn")                       -> Version("0"))
+                                    , Name("MooseX-Has-Options"                      ) -> Map( Mod("Test::Deep")                       -> Version("0")
+                                                                                             , Mod("Test::Differences")                -> Version("0")
+                                                                                             , Mod("Test::Exception")                  -> Version("0")
+                                                                                             , Mod("Test::Warn")                       -> Version("0"))
                                     , Name("PerlIO-via-symlink"                      ) -> Map( Mod("inc::Module::Install")             -> Version("0"))
                                     , Name("PerlIO-via-Timeout"                      ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("Plack"                                   ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
@@ -482,7 +483,7 @@ object CpanErrata {
                                                                                              , Mod("Test::Warn")                       -> Version("0"))
                                     , Name("Test-Run-Plugin-ColorFileVerdicts"       ) -> Map( Mod("Test::Trap")                       -> Version("0"))
                                     , Name("Test-Run-Plugin-ColorSummary"            ) -> Map( Mod("Test::Trap")                       -> Version("0"))
-                                    , Name("Test-WWW-Mechanize"                      ) -> Map( Mod("Test::LongString")                 -> Version("0") )
+                                    , Name("Test-WWW-Mechanize"                      ) -> Map( Mod("Test::LongString")                 -> Version("0"))
                                     , Name("Test-WWW-Mechanize-CGI"                  ) -> Map( Mod("Test::LongString")                 -> Version("0"))
                                     , Name("Test-WWW-Mechanize-PSGI"                 ) -> Map( Mod("Test::LongString")                 -> Version("0"))
                                     , Name("Twiggy"                                  ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
@@ -1090,14 +1091,14 @@ object Cpan2Nix {
           val nixcode = s"""|let
                             |  # do the build als ob the perl version is bumped
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; };
-                            |  pkgs524 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
-                            |  pkgs526 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
+                            |# pkgs524 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
+                            |# pkgs526 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
                             |  pkgs528 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
                             |  lib.filter (x: (x != null) && x.meta.available) (
                             |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra pkgs.nix1 ])
-                            |                         [ pkgs524 pkgs526 pkgs528 ])
+                            |                         [ /*pkgs524 pkgs526*/ pkgs528 ])
                             |   ++
                             |   (lib.concatMap (pp:   (with pp; [
                             |                            perl
@@ -1122,7 +1123,7 @@ object Cpan2Nix {
                             |                  ) [  # pkgs.perlPackages
                             |
                             |                       # pkgs524.perl522Packages
-                            |                         pkgs524.perlPackages
+                            |                       # pkgs524.perlPackages
                             |                       # pkgs524.perl526Packages
                             |                       # pkgs524.perl528Packages
                             |

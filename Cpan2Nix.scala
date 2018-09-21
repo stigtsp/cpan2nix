@@ -1097,8 +1097,8 @@ object Cpan2Nix {
           val nixcode = s"""|let
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; };
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs528 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
-                            |# pkgs530 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl530Packages; }) ]; };
+                            |  pkgs528 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
+                            |# pkgs530 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; overlays = [ (self: super: { perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
                             |  lib.filter (x: (x != null) && x.meta.available) (

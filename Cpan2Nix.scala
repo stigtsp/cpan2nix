@@ -533,6 +533,7 @@ object CpanErrata {
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
                                     , CpanPackage fromPath "S/SA/SATOH/Test-Time-0.05.tar.gz"                        // 0.06 test failed
                                     , CpanPackage fromPath "R/RJ/RJBS/Getopt-Long-Descriptive-0.102.tar.gz"          // It broke perlPackages.MouseXGetOpt (https://github.com/NixOS/nixpkgs/issues/45960#issuecomment-418176613)
+                                    , CpanPackage fromPath "E/ET/ETHER/MooseX-Getopt-0.72.tar.gz"                    // 0.73 breaks perlPackages.CatalystRuntime
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -993,7 +994,7 @@ object Cpan2Nix {
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
         }
@@ -1072,7 +1073,7 @@ object Cpan2Nix {
                                                                                                                 }
                                                     }
 /*
-          val toupdate = nixPkgs.allPackages filter (_.name == Name("Tie-Hash-Indexed"))
+          val toupdate = nixPkgs.allPackages filter (_.name == Name("Catalyst-Runtime"))
 */
 
           for (np      <- toupdate;
@@ -1086,6 +1087,7 @@ object Cpan2Nix {
           }
         }
 
+//      require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs" :: Nil, cwd = repopath).! == 0)
 
         if (doTestBuild) {
           // try to build
@@ -1098,7 +1100,7 @@ object Cpan2Nix {
                             |  inherit (pkgs528) lib;
                             |in
                             |  lib.filter (x: (x != null) && x.meta.available) (
-                            |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra pkgs.nix1 ])
+                            |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra ])
                             |                         [ /*pkgs524 pkgs526*/ pkgs528 ])
                             |   ++
                             |   (lib.concatMap (pp:   (with pp; [

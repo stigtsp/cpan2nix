@@ -617,17 +617,20 @@ object Cpan {
 class PerlDerivation(repopath: File, name: String /* = "perl522"*/, val version: String /* = "5.22"*/) {
   private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
-                                       :: (if (Cpan2Nix.remoteBuild)
-                                                "--option" :: "builders-use-substitutes" :: "true"
-                                             :: "--builders" :: s"ssh://${Cpan2Nix.worker} x86_64-linux /home/user/.ssh/id_ed25519 ${Cpan2Nix.concurrency} ${Cpan2Nix.concurrency} kvm,big-parallel"
-                                             :: Nil
-                                           else
-                                                Nil)
+                                       :: ( Cpan2Nix.remoteBuild match {
+                                             case Some(remoteWorker) =>
+                                                ( "--option" :: "builders-use-substitutes" :: "true"
+                                               :: "--builders" :: s"ssh://${remoteWorker.host} ${remoteWorker.system} /home/user/.ssh/id_ed25519 ${remoteWorker.concurrency} ${remoteWorker.concurrency} kvm,big-parallel"
+                                               :: Nil
+                                                )
+                                              case None =>
+                                                Nil
+                                           })
                                       ::: "-E" :: s"(import <nixpkgs> { }).$name" :: Nil,
                                           cwd = repopath,
                                           "NIXPKGS_CONFIG" -> "",
                                           "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}",
-                                          "NIX_SSHOPTS"    -> Cpan2Nix.NIX_SSHOPTS.mkString(" ")
+                                          "NIX_SSHOPTS"    -> Cpan2Nix.remoteBuild.fold("")(_.sshopts.mkString(" "))
                                         ).!!.trim
 
   private[this] val localVersions = collection.mutable.HashMap.empty[Mod, Option[Version]]
@@ -972,10 +975,10 @@ object Cpan2Nix {
   val doUpgrade   = true
   val doTestBuild = true
 
-  val remoteBuild = true
-  val worker      = "htz2.dmz"
-  val NIX_SSHOPTS = "-p922" :: "-t" :: Nil
-  val concurrency = 16
+  case class RemoteWorker(system: String, host: String, sshopts: List[String], concurrency: Int)
+//val remoteBuild: Option[RemoteWorker] = None
+  val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("x86_64-linux",  "htz2.dmz",       "-p922" :: Nil, 16))
+//val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("aarch64-linux", "147.75.111.246",            Nil, 96)) // just packet.net "nixos 18.03"
 
 
   def main(args: Array[String]) {
@@ -1092,11 +1095,10 @@ object Cpan2Nix {
         if (doTestBuild) {
           // try to build
           val nixcode = s"""|let
-                            |  # do the build als ob the perl version is bumped
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; };
-                            |# pkgs524 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl524Packages; }) ]; };
-                            |# pkgs526 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl526Packages; }) ]; };
-                            |  pkgs528 = import <nixpkgs> { config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
+                            |  # do the build als ob the perl version is bumped
+                            |  pkgs528 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
+                            |# pkgs530 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; overlays = [ (self: super: { perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
                             |  lib.filter (x: (x != null) && x.meta.available) (
@@ -1125,19 +1127,9 @@ object Cpan2Nix {
                             |                         ])
                             |                  ) [  # pkgs.perlPackages
                             |
-                            |                       # pkgs524.perl522Packages
-                            |                       # pkgs524.perlPackages
-                            |                       # pkgs524.perl526Packages
-                            |                       # pkgs524.perl528Packages
-                            |
-                            |                       # pkgs526.perl522Packages
-                            |                       # pkgs526.perl524Packages
-                            |                       # pkgs526.perlPackages
-                            |                       # pkgs526.perl528Packages
-                            |
-                            |                       # pkgs528.perl522Packages
-                            |                       # pkgs528.perl524Packages
-                            |                       # pkgs528.perl526Packages
+                            |                         pkgs528.perl522Packages
+                            |                         pkgs528.perl524Packages
+                            |                         pkgs528.perl526Packages
                             |                         pkgs528.perlPackages
                             |                    ])
                             |  )
@@ -1154,42 +1146,46 @@ object Cpan2Nix {
                                          ).!!.split('\n').toList
                                 )
 
-          val t = if (remoteBuild) {
-                    for (drvs <-  instantiateDrvs;
+          val t = remoteBuild match {
+                    case Some(RemoteWorker(system, host, sshopts, concurrency)) =>
+                      for (drvs <-  instantiateDrvs;
 
-                         _ <- Task(require(Process("nix-copy-closure" :: "-v" :: "--to" :: s"root@$worker" :: drvs,
-                                                   cwd = repopath,
-                                                    "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).! == 0));
+                           _ <- Task(require(Process("nix-copy-closure" :: "-v" :: "--to" :: s"root@$host" :: drvs,
+                                                     cwd = repopath,
+                                                      "NIX_SSHOPTS" -> sshopts.mkString(" ")).! == 0));
 
-                         // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
-                         _ <- Task.wander(drvs.sliding(1000,1000)) { slice =>
-                                Task {
-                                  require(Process("ssh" :: NIX_SSHOPTS ::: s"root@$worker" :: "--"
-                                               :: "nix-store" :: "--realise" :: "--ignore-unknown"
-                                               :: "--option"   :: "binary-caches" :: "http://cache.nixos.org/"
-                                               :: s"-j${Cpan2Nix.concurrency}"
-                                               :: "--keep-going"
-                                               :: slice).! == 0)
-                                }.materialize
-                              }
-                        /* copy the results back
-                         _ <- Task( require(Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: s"root@$worker" :: drvs,
-                                                    cwd = repopath,
-                                                    "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).! == 0)
-                        */
-                        ) yield ()
-          } else {
-                    for (drvs <- instantiateDrvs;
-                         // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
-                         _    <- Task.traverse(drvs.sliding(1000,1000)) { slice =>
-                                   Task {
-                                     require(Process( "nix-store" :: "--realise" :: "--ignore-unknown"
-                                                   :: "--option"  :: "binary-caches" :: /* http://$worker:44444/ */ s"http://cache.nixos.org/"
-                                                   :: "--keep-failed"
-                                                   :: slice).! == 0)
+                           // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
+                           _ <- Task.wander(drvs.sliding(1000,1000)) { slice =>
+                                  Task {
+                                    val cmd = ("ssh" :: sshopts ::: s"root@$host" :: "--"
+                                                     :: "nix-store" :: "--realise" /*:: "--ignore-unknown"*/
+                                                     :: "--sandbox"
+                                                     :: "--option"  :: "binary-caches" :: "http://cache.nixos.org/"
+                                                     :: s"-j${concurrency}"
+                                                     :: "--keep-going"
+                                                     :: slice)
+                                    require(Process(cmd).! == 0)
+                                  }.materialize
+                                }
+                          /* copy the results back
+                           _ <- Task( require(Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: s"root@$worker" :: drvs,
+                                                      cwd = repopath,
+                                                      "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).! == 0)
+                          */
+                          ) yield ()
+                    case None =>
+                      for (drvs <- instantiateDrvs;
+                           // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
+                           _    <- Task.traverse(drvs.sliding(1000,1000)) { slice =>
+                                     Task {
+                                       require(Process( "nix-store" :: "--realise" /*:: "--ignore-unknown"*/
+                                                     :: "--sandbox"
+                                                     :: "--option"  :: "binary-caches" :: /* http://$worker:44444/ */ s"http://cache.nixos.org/"
+                                                     :: "--keep-failed"
+                                                     :: slice).! == 0)
+                                     }
                                    }
-                                 }
-                        ) yield ()
+                          ) yield ()
           }
           val io = Scheduler.io("my-io") // do not limit parallelism with number of local cpus
           Await.result(t.runAsync(io), 10.hours)

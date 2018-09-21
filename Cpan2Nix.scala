@@ -533,8 +533,6 @@ object CpanErrata {
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
                                     , CpanPackage fromPath "S/SA/SATOH/Test-Time-0.05.tar.gz"                        // 0.06 test failed
                                     , CpanPackage fromPath "R/RJ/RJBS/Getopt-Long-Descriptive-0.102.tar.gz"          // It broke perlPackages.MouseXGetOpt (https://github.com/NixOS/nixpkgs/issues/45960#issuecomment-418176613)
-                                    , CpanPackage fromPath "C/CL/CLKAO/SVN-Simple-0.28.tar.gz"                       // regex unable to parse `propagatedBuildInputs = [ (pkgs.subversionClient.override { inherit perl; }) ];`
-                                                                                                                     // (remove after update regex parser to fastparse-based)
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -657,8 +655,8 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
     val sha256:                             SHA256   = SHA256 fromString """(?s)sha256\s*=\s*"([a-z0-9]+)";""" .r.findFirstMatchIn(source).get.group(1)
     val resolvedNameAndVersion:             String   = versionString.fold(nameAndVersion)(nameAndVersion.replace("${version}", _))
     val resolvedUrl:                        String   = versionString.fold(url           )(url           .replace("${version}", _)).replace("${name}", resolvedNameAndVersion)
-    val propagatedBuildInputs: Option[Array[String]] = """(?s)propagatedBuildInputs\s*=\s*\[([^]]*)\]"""       .r.findFirstMatchIn(source).map(_ group 1 split "\\s+")
-    val buildInputs:           Option[Array[String]] = """(?s)buildInputs\s*=\s*\[([^]]*)\]"""                 .r.findFirstMatchIn(source).map(_ group 1 split "\\s+")
+    val propagatedBuildInputs: Option[Array[String]] = """(?s)propagatedBuildInputs\s*=\s*\[([^]]*)\]"""       .r.findFirstMatchIn(source).map(m => """\([^)]+\)|\S+""".r.findAllIn(m.group(1)).toArray)
+    val buildInputs:           Option[Array[String]] = """(?s)buildInputs\s*=\s*\[([^]]*)\]"""                 .r.findFirstMatchIn(source).map(m => """\([^)]+\)|\S+""".r.findAllIn(m.group(1)).toArray)
     val licenses:              Option[Array[String]] = """(?s)license\s*=\s*(with[^;]+;\s*)\[([^]]*)\]"""      .r.findFirstMatchIn(source).map(_ group 1 split "\\s+")
     val doCheck:                     Option[String]  =                   """(?s)doCheck\s*=\s*([^;]+);"""      .r.findFirstMatchIn(source).map(_ group 1)
 
@@ -701,16 +699,16 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
         case (None   , false) =>
         case (None   , true ) => val a = s.split('\n')
                                  s = (a.init :+ s"    propagatedBuildInputs = [ ${propagatedBuildInputs mkString " "} ];" :+ a.last) mkString "\n"
-        case (Some(_), false) => s = """(?s)\s+propagatedBuildInputs\s*=\s*([^;]+);""".r.replaceAllIn(s, "")
-        case (Some(_), true ) => s = """(?s) propagatedBuildInputs\s*=\s*[^;]+;""".r.replaceAllIn(s, s" propagatedBuildInputs = [ ${propagatedBuildInputs mkString " "} ];")
+        case (Some(_), false) => s = """(?s)\s+propagatedBuildInputs\s*=\s*((?:\([^)]+\)|[^;])+);""".r.replaceAllIn(s, "")
+        case (Some(_), true ) => s = """(?s) propagatedBuildInputs\s*=\s*(?:\([^)]+\)|[^;])+;""".r.replaceAllIn(s, s" propagatedBuildInputs = [ ${propagatedBuildInputs mkString " "} ];")
       }
 
       (this.buildInputs, buildInputs.nonEmpty) match {
         case (None   , false) =>
         case (None   , true ) => val a = s.split('\n')
                                s = (a.init :+ s"    buildInputs = [ ${buildInputs mkString " "} ];" :+ a.last) mkString "\n"
-        case (Some(_), false) => s = """(?s)\s+buildInputs\s*=\s*([^;]+);""".r.replaceAllIn(s, "")
-        case (Some(_), true ) => s = """(?s) buildInputs\s*=\s*[^;]+;""".r.replaceAllIn(s, s" buildInputs = [ ${buildInputs mkString " "} ];")
+        case (Some(_), false) => s = """(?s)\s+buildInputs\s*=\s*((?:\([^)]+\)|[^;])+);""".r.replaceAllIn(s, "")
+        case (Some(_), true ) => s = """(?s) buildInputs\s*=\s*(?:\([^)]+\)|[^;])+;""".r.replaceAllIn(s, s" buildInputs = [ ${buildInputs mkString " "} ];")
       }
 
       (this.licenses, licenses.nonEmpty) match {
@@ -732,8 +730,8 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
           , url                   = s"mirror://cpan/authors/id/${cp.path}"
           , sha256                = cp.sha256
           , doCheckOverride       = CpanErrata.doCheckOverride get cp.name
-          , propagatedBuildInputs = propagatedBuildInputs.toList.flatten.filter(_ startsWith "pkgs.") ++ (runtimeDeps(cp) -- runtimeDeps(cp).flatMap(deepRuntimeDeps _)).map(escapedNixifiedName).toArray.sorted
-          , buildInputs           =           buildInputs.toList.flatten.filter(_ startsWith "pkgs.") ++ (buildDeps(cp)   -- deepRuntimeDeps(cp)                       ).map(escapedNixifiedName).toArray.sorted
+          , propagatedBuildInputs = propagatedBuildInputs.toList.flatten.filter(_ contains "pkgs.") ++ (runtimeDeps(cp) -- runtimeDeps(cp).flatMap(deepRuntimeDeps _)).map(escapedNixifiedName).toArray.sorted
+          , buildInputs           =           buildInputs.toList.flatten.filter(_ contains "pkgs.") ++ (buildDeps(cp)   -- deepRuntimeDeps(cp)                       ).map(escapedNixifiedName).toArray.sorted
           , licenses              = cp.meta.licenses
           )
 
@@ -990,12 +988,12 @@ object Cpan2Nix {
             require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
           } else {
             require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
-//          require(Process("git" :: "fetch" :: "origin" :: "master"  :: Nil, cwd = repopath).! == 0)
+            require(Process("git" :: "fetch" :: "origin" :: "master"  :: Nil, cwd = repopath).! == 0)
           }
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
-//tmp     require(Process("git" :: "merge"               :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
         }

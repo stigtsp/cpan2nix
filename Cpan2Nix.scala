@@ -533,7 +533,8 @@ object CpanErrata {
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
                                     , CpanPackage fromPath "S/SA/SATOH/Test-Time-0.05.tar.gz"                        // 0.06 test failed
                                     , CpanPackage fromPath "R/RJ/RJBS/Getopt-Long-Descriptive-0.102.tar.gz"          // It broke perlPackages.MouseXGetOpt (https://github.com/NixOS/nixpkgs/issues/45960#issuecomment-418176613)
-                                    , CpanPackage fromPath "S/SR/SRI/Mojolicious-7.88.tar.gz"                        // It broke perlPackages.MojoIOLoopForkCall
+                                    , CpanPackage fromPath "C/CL/CLKAO/SVN-Simple-0.28.tar.gz"                       // regex unable to parse `propagatedBuildInputs = [ (pkgs.subversionClient.override { inherit perl; }) ];`
+                                                                                                                     // (remove after update regex parser to fastparse-based)
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -968,8 +969,8 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
 object Cpan2Nix {
   // todo: command-line switches
-  val doCheckout  = !true
-  val doUpgrade   = !true
+  val doCheckout  = true
+  val doUpgrade   = true
   val doTestBuild = true
 
   val remoteBuild = true

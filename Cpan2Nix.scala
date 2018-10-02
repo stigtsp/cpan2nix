@@ -614,7 +614,7 @@ object Cpan {
 }
 
 
-class PerlDerivation(repopath: File, name: String /* = "perl522"*/, val version: String /* = "5.22"*/) {
+class PerlDerivation(repopath: File, name: String /* = "perl526"*/, val version: String /* = "5.26"*/) {
   private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
                                        :: ( Cpan2Nix.remoteBuild match {
@@ -1055,7 +1055,7 @@ object Cpan2Nix {
           }
         })
 
-        val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl522", version="5.22")
+        val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl526", version="5.26")
         val pullRequester = new PullRequester(repopath, theOldestSupportedPerl)
 
         // compare results of evaluation pkgs.perlPackages (nixPkgs.allPackages) and parsing of perl-packages.nix (pullRequester.buildPerlPackageBlocks)
@@ -1103,7 +1103,7 @@ object Cpan2Nix {
                             |in
                             |  lib.filter (x: (x != null) && x.meta.available) (
                             |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra ])
-                            |                         [ /*pkgs524 pkgs526*/ pkgs528 ])
+                            |                         [ /*pkgs526*/ pkgs528 ])
                             |   ++
                             |   (lib.concatMap (pp:   (with pp; [
                             |                            perl
@@ -1127,8 +1127,6 @@ object Cpan2Nix {
                             |                         ])
                             |                  ) [  # pkgs.perlPackages
                             |
-                            |                         pkgs528.perl522Packages
-                            |                         pkgs528.perl524Packages
                             |                         pkgs528.perl526Packages
                             |                         pkgs528.perlPackages
                             |                    ])

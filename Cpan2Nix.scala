@@ -977,7 +977,7 @@ object Cpan2Nix {
 
   case class RemoteWorker(system: String, host: String, sshopts: List[String], concurrency: Int)
 //val remoteBuild: Option[RemoteWorker] = None
-  val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("x86_64-linux",  "htz2.dmz",       "-p922" :: Nil, 16))
+  val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("x86_64-linux",  "adv1.dmz",       "-p922" :: Nil, 16))
 //val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("aarch64-linux", "147.75.111.246",            Nil, 96)) // just packet.net "nixos 18.03"
 
 

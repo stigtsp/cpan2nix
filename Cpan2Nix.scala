@@ -534,7 +534,7 @@ object CpanErrata {
                                     , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"                // 2.15 seems broken
                                     , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11 test failed
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
-                                    , CpanPackage fromPath "S/SA/SATOH/Test-Time-0.05.tar.gz"                        // 0.06 test failed
+                                    , CpanPackage fromPath "S/SA/SATOH/Test-Time-0.05.tar.gz"                        // 0.06,0.07 test failed
                                     , CpanPackage fromPath "R/RJ/RJBS/Getopt-Long-Descriptive-0.102.tar.gz"          // It broke perlPackages.MouseXGetOpt (https://github.com/NixOS/nixpkgs/issues/45960#issuecomment-418176613)
                                     , CpanPackage fromPath "E/ET/ETHER/MooseX-Getopt-0.72.tar.gz"                    // 0.73 breaks perlPackages.CatalystRuntime
                                     )
@@ -1001,8 +1001,8 @@ object Cpan2Nix {
           }
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
-//        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
         }
@@ -1100,7 +1100,7 @@ object Cpan2Nix {
         if (doTestBuild) {
           // try to build
           val nixcode = s"""|let
-                            |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; };
+                            |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
                             |  pkgs528 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
                             |# pkgs530 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; overlays = [ (self: super: { perlPackages = self.perl530Packages; }) ]; };

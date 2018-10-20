@@ -371,7 +371,9 @@ object CpanErrata {
 
 
   // *** add to nixpkgs dependencies missing on cpan (usually due to missing .meta file; FIXME: look into Makefile.PL then)
-  val extraBuildDependencies   = Map( Name("Autodia"                                 ) -> Map( Mod("DBI")                              -> Version("0"))
+  val extraBuildDependencies   = Map( Name("Alien-Build"                             ) -> Map( Mod("PkgConfig")                        -> Version("0"))
+                                    , Name("Alien-GMP"                               ) -> Map( Mod("Devel::CheckLib")                  -> Version("0"))
+                                    , Name("Autodia"                                 ) -> Map( Mod("DBI")                              -> Version("0"))
                                     , Name("Array-FIFO"                              ) -> Map( Mod("Test::Trap")                       -> Version("0")
                                                                                              , Mod("Test::Deep::NoTest")               -> Version("0"))
                                     , Name("Archive-Zip"                             ) -> Map( Mod("Test::MockModule")                 -> Version("0"))
@@ -506,6 +508,7 @@ object CpanErrata {
                                     , Name("libxml-perl"                      ) -> Map( Mod("XML::Parser")                  -> Version("0"))
                                     , Name("Linux-Inotify2"                   ) -> Map( Mod("common::sense")                -> Version("0"))
                                     , Name("Log-LogLite"                      ) -> Map( Mod("IO::LockedFile")               -> Version("0"))
+                                    , Name("Net-SSH-Perl"                     ) -> Map( Mod("File::HomeDir")                -> Version("0"))
                                     , Name("Proc-WaitStat"                    ) -> Map( Mod("IPC::Signal")                  -> Version("0"))
                                     , Name("RSS-Parser-Lite"                  ) -> Map( Mod("local::lib")                   -> Version("0"))
                                     , Name("Statistics-TTest"                 ) -> Map( Mod("Statistics::Distributions")    -> Version("0")
@@ -766,8 +769,10 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
       if (cp.meta.licenses.nonEmpty) {
         sb append s"""      license = with stdenv.lib.licenses; [ ${cp.meta.licenses mkString " "} ];\n"""
       }
-      if (cp.meta.homepage.nonEmpty) {
-        sb append s"""      homepage = "${cp.meta.homepage.get}";\n"""
+      cp.meta.homepage match {
+        case Some(hp) if !hp.matches("""https?://metacpan\.org/.+""") =>
+          sb append s"""      homepage = "${cp.meta.homepage.get}";\n"""
+        case _                                                        =>
       }
       sb append s"""    };\n"""
       sb append s"""  };\n"""
@@ -996,8 +1001,8 @@ object Cpan2Nix {
           }
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
-          require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
-//        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
         }

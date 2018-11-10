@@ -623,7 +623,7 @@ class PerlDerivation(repopath: File, name: String /* = "perl526"*/, val version:
                                        :: ( Cpan2Nix.remoteBuild match {
                                              case Some(remoteWorker) =>
                                                 ( "--option" :: "builders-use-substitutes" :: "true"
-                                               :: "--builders" :: s"ssh://${remoteWorker.host} ${remoteWorker.system} /home/user/.ssh/id_ed25519 ${remoteWorker.concurrency} ${remoteWorker.concurrency} kvm,big-parallel"
+                                               :: "--builders" :: s"ssh://${remoteWorker.user}@${remoteWorker.host} ${remoteWorker.system} /home/user/.ssh/id_ed25519 ${remoteWorker.concurrency} ${remoteWorker.concurrency} kvm,big-parallel"
                                                :: Nil
                                                 )
                                               case None =>
@@ -973,6 +973,11 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
 
 
+case class RemoteWorker(user: String, host: String, system: String, sshopts: List[String], concurrency: Int) {
+  require(user matches """[a-z][a-z0-9]*""")
+  require(host matches """[a-z0-9-]+(\.[a-z0-9-]+)*""")
+  require(Set("x86_64-linux", "i686-linux", "armv7l-linux", "aarch64-linux", "x86_64-darwin") contains system)
+}
 
 object Cpan2Nix {
   // todo: command-line switches
@@ -980,10 +985,10 @@ object Cpan2Nix {
   val doUpgrade   = true
   val doTestBuild = true
 
-  case class RemoteWorker(system: String, host: String, sshopts: List[String], concurrency: Int)
 //val remoteBuild: Option[RemoteWorker] = None
-  val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("x86_64-linux",  "adv1.dmz",       "-p922" :: Nil, 16))
-//val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("aarch64-linux", "147.75.111.246",            Nil, 96)) // just packet.net "nixos 18.03"
+  val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("root",     "adv1.dmz",                 "x86_64-linux",  "-p922" :: Nil, 16))
+//val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("user",     "172.16.224.2",             "x86_64-darwin",            Nil,  4))
+//val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "aarch64-linux",            Nil, 32))
 
 
   def main(args: Array[String]) {
@@ -1150,17 +1155,17 @@ object Cpan2Nix {
                                 )
 
           val t = remoteBuild match {
-                    case Some(RemoteWorker(system, host, sshopts, concurrency)) =>
+                    case Some(RemoteWorker(user, host, system, sshopts, concurrency)) =>
                       for (drvs <-  instantiateDrvs;
 
-                           _ <- Task(require(Process("nix-copy-closure" :: "-v" :: "--to" :: s"root@$host" :: drvs,
+                           _ <- Task(require(Process("nix-copy-closure" :: "-v" :: "--to" :: s"$user@$host" :: drvs,
                                                      cwd = repopath,
                                                       "NIX_SSHOPTS" -> sshopts.mkString(" ")).! == 0));
 
                            // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
                            _ <- Task.wander(drvs.sliding(1000,1000)) { slice =>
                                   Task {
-                                    val cmd = ("ssh" :: sshopts ::: s"root@$host" :: "--"
+                                    val cmd = ("ssh" :: sshopts ::: s"$user@$host" :: "--"
                                                      :: "nix-store" :: "--realise" /*:: "--ignore-unknown"*/
                                                      :: "--sandbox"
                                                      :: "--option"  :: "binary-caches" :: "http://cache.nixos.org/"
@@ -1171,7 +1176,7 @@ object Cpan2Nix {
                                   }.materialize
                                 }
                           /* copy the results back
-                           _ <- Task( require(Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: s"root@$worker" :: drvs,
+                           _ <- Task( require(Process("nix-copy-closure" :: "-v" :: "--include-outputs" :: "--from" :: s"$user@$host" :: drvs,
                                                       cwd = repopath,
                                                       "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).! == 0)
                           */

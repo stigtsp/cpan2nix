@@ -452,6 +452,8 @@ object CpanErrata {
                                                                                              , Mod("Test::Differences")                -> Version("0")
                                                                                              , Mod("Test::Exception")                  -> Version("0")
                                                                                              , Mod("Test::Warn")                       -> Version("0"))
+                                    , Name("Net-SCP"                                 ) -> Map( Mod("String::ShellQuote")               -> Version("0")
+                                                                                             , Mod("Net::SSH")                         -> Version("0"))
                                     , Name("PerlIO-via-symlink"                      ) -> Map( Mod("inc::Module::Install")             -> Version("0"))
                                     , Name("PerlIO-via-Timeout"                      ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("Plack"                                   ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
@@ -537,6 +539,8 @@ object CpanErrata {
                                     , CpanPackage fromPath "S/SA/SATOH/Test-Time-0.05.tar.gz"                        // 0.06,0.07 test failed
                                     , CpanPackage fromPath "R/RJ/RJBS/Getopt-Long-Descriptive-0.102.tar.gz"          // It broke perlPackages.MouseXGetOpt (https://github.com/NixOS/nixpkgs/issues/45960#issuecomment-418176613)
                                     , CpanPackage fromPath "E/ET/ETHER/MooseX-Getopt-0.72.tar.gz"                    // 0.73 breaks perlPackages.CatalystRuntime
+                                    , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
+                                    , CpanPackage fromPath "S/SH/SHANCOCK/Perl-Tidy-20180220.tar.gz"                 // 201810xx test not passed
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'

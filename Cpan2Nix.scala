@@ -990,7 +990,7 @@ object Cpan2Nix {
   val doTestBuild = true
 
 //val remoteBuild: Option[RemoteWorker] = None
-  val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("root",     "adv1.dmz",                 "x86_64-linux",  "-p922" :: Nil, 16))
+  val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "x86_64-linux",  "-p922" :: Nil, 16))
 //val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("user",     "172.16.224.2",             "x86_64-darwin",            Nil,  4))
 //val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "aarch64-linux",            Nil, 32))
 

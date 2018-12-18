@@ -621,7 +621,7 @@ object Cpan {
 }
 
 
-class PerlDerivation(repopath: File, name: String /* = "perl526"*/, val version: String /* = "5.26"*/) {
+class PerlDerivation(repopath: File, name: String /* = "perl528"*/, val version: String /* = "5.28"*/) {
   private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
                                        :: ( Cpan2Nix.remoteBuild match {
@@ -1069,7 +1069,7 @@ object Cpan2Nix {
           }
         })
 
-        val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl526", version="5.26")
+        val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl528", version="5.28")
         val pullRequester = new PullRequester(repopath, theOldestSupportedPerl)
 
         // compare results of evaluation pkgs.perlPackages (nixPkgs.allPackages) and parsing of perl-packages.nix (pullRequester.buildPerlPackageBlocks)
@@ -1115,7 +1115,7 @@ object Cpan2Nix {
                             |# pkgs530 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; overlays = [ (self: super: { perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
-                            |  lib.filter (x: (x != null) && x.meta.available) (
+                            |  lib.filter (x: (x != null) && (lib.isDerivation x) && x.meta.available) (
                             |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra ])
                             |                         [ /*pkgs526*/ pkgs528 ])
                             |   ++
@@ -1141,7 +1141,7 @@ object Cpan2Nix {
                             |                         ])
                             |                  ) [  # pkgs.perlPackages
                             |
-                            |                         pkgs528.perl526Packages
+                            |                       # pkgs528.perl526Packages
                             |                         pkgs528.perlPackages
                             |                    ])
                             |  )

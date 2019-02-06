@@ -624,6 +624,7 @@ object Cpan {
 class PerlDerivation(repopath: File, name: String /* = "perl528"*/, val version: String /* = "5.28"*/) {
   private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
+//                                     :: "--builders" :: "ssh://root@172.16.224.1             x86_64-linux  /home/user/.ssh/id_ed25519                   4 4 kvm,big-parallel"
                                        :: ( Cpan2Nix.remoteBuild match {
                                              case Some(remoteWorker) =>
                                                 ( "--option" :: "builders-use-substitutes" :: "true"
@@ -848,18 +849,17 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
 
 
-  def prepareCommit(np: NixPackage, cp: CpanPackage): Option[String] = {
+  def prepareCommit(onp: Option[NixPackage], cp: CpanPackage, upgradeDeps: Boolean): Option[String] = {
     allDeps(cp) // to fail earlier if circular deps found
 
 /*
     // debug print
-    println(s"  prepareCommit($np, $cp)")
+    println(s"  prepareCommit($onp, $cp)")
     println(allDeps(cp) mkString "\n")
     println(s"  meta.buildMODs:")
     println(cp.meta.buildMODs mkString "\n")
     println(s"  buildDeps:")
     println(buildDeps(cp) mkString "\n")
-
     println(s"  meta.runtimeMODs:")
     println(cp.meta.runtimeMODs mkString "\n")
     println(s"  runtimeDeps:")
@@ -880,40 +880,53 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
       rc
     }
 
-    buildPerlPackageBlocks find (_._2.resolvedUrl == np.url) match {
+    var newBlock: BuildPerlPackageBlock = null
+    onp match {
+      case Some(np) =>
+        buildPerlPackageBlocks find (_._2.resolvedUrl == np.url) match {
+          case Some((_, block)) if isBuiltInTheOldestSupportedPerl =>
+            // do mutate `perl-packages.nix`
+            `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null; # part of Perl ${theOldestSupportedPerl.version}""")
+
+            val pw = new java.io.PrintWriter(new File(repopath, "/pkgs/top-level/perl-packages.nix"))
+            pw write `perl-packages.nix`
+            pw.close()
+
+            return Some(s"perlPackages.${block.nixpkgsName}: removed built-in")
+          case Some((_, block)) =>
+            newBlock = block.updatedTo(cp)
+
+            // do mutate `perl-packages.nix`
+            buildPerlPackageBlocks = buildPerlPackageBlocks - block.nixpkgsName + (newBlock.nixpkgsName -> newBlock)
+            `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, newBlock.source.trim)
+          case None => //???
+            System.err.println(s"$np->$cp not found in perl-packages.nix")
+            return None
+        }
       case None =>
-        System.err.println(s"$np->$cp not found in perl-packages.nix")
-        None
+        newBlock = new BuildPerlPackageBlock(cp)
 
-      case Some((_, block)) if isBuiltInTheOldestSupportedPerl =>
         // do mutate `perl-packages.nix`
-        `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null; # part of Perl ${theOldestSupportedPerl.version}""")
+        buildPerlPackageBlocks = buildPerlPackageBlocks + (newBlock.nixpkgsName -> newBlock)
+        val after = (buildPerlPackageBlocks.until(newBlock.nixpkgsName).lastOption getOrElse buildPerlPackageBlocks.last)._2
+        `perl-packages.nix` = `perl-packages.nix`.replace(after.source.trim, after.source.trim+"\n\n  "+newBlock.source.trim)
+    }
 
-        val pw = new java.io.PrintWriter(new File(repopath, "/pkgs/top-level/perl-packages.nix"))
-        pw write `perl-packages.nix`
-        pw.close()
+    var message = List.empty[String]
+    onp match {
+      case Some(np) if np.version != cp.version => message ::= s"perlPackages.${newBlock.nixpkgsName}: ${np.version} -> ${cp.version}"
+      case Some(np)                             => message ::= s"perlPackages.${newBlock.nixpkgsName}: cleanup"
+      case None                                 => message ::= s"perlPackages.${newBlock.nixpkgsName}: init at ${cp.version}"
+    }
 
-        Some(s"perlPackages.${block.nixpkgsName}: removed built-in")
-
-      case Some((_, block)) =>
-        var message = List.empty[String]
-
-        val newBlock = block.updatedTo(cp)
-
-        if (np.version != cp.version)
-          message ::= s"perlPackages.${block.nixpkgsName}: ${np.version} -> ${cp.version}"
-        else
-          message ::= s"perlPackages.${block.nixpkgsName}: cleanup"
-
-
-        val depBlocks: Set[Either[(BuildPerlPackageBlock, CpanPackage), BuildPerlPackageBlock]] =
-          allDeps(cp) flatMap { dep =>
-            buildPerlPackageBlocks.filter(_._2.name == dep.name).toList match {
-              case Nil        => Right(new BuildPerlPackageBlock(dep)) :: Nil // Try(new BuildPerlPackageBlock(dep)).toOption.map(Right(_))
-              case depblocks  => //if (depblocks.length>1) println("depblocks:"::depblocks mkString "\n")
-                                 depblocks map {case (_, bppb) => Left(bppb->dep)}
-            }
-          }
+    val depBlocks: Set[Either[(BuildPerlPackageBlock, CpanPackage), BuildPerlPackageBlock]] =
+      allDeps(cp) flatMap { dep =>
+        buildPerlPackageBlocks.filter(_._2.name == dep.name).toList match {
+          case Nil        => Right(new BuildPerlPackageBlock(dep)) :: Nil // Try(new BuildPerlPackageBlock(dep)).toOption.map(Right(_))
+          case depblocks  => //if (depblocks.length>1) println("depblocks:"::depblocks mkString "\n")
+                             depblocks map {case (_, bppb) => Left(bppb->dep)}
+        }
+      }
 
 /*
         // debug print
@@ -932,45 +945,42 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
         }
 */
 
-        // do mutate `perl-packages.nix`
-        buildPerlPackageBlocks = buildPerlPackageBlocks - block.nixpkgsName + (newBlock.nixpkgsName -> newBlock)
-        `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, newBlock.source.trim)
+    depBlocks foreach {
+      case Left((bppb, dep)) => // upgrade/cleanup existing dep
+        if (upgradeDeps) {
+          val newBppb = bppb.updatedTo(dep)
+          if (bppb.source.trim != newBppb.source.trim) {
+            if (bppb.version != newBppb.version)
+              message ::= s"perlPackages.${bppb.nixpkgsName}: ${bppb.version} -> ${newBppb.version}"
+            else
+              message ::= s"perlPackages.${bppb.nixpkgsName}: cleanup"
 
-        depBlocks foreach {
-          case Left((bppb, dep)) => // upgrade/cleanup existing dep
-            val newBppb = bppb.updatedTo(dep)
-            if (bppb.source.trim != newBppb.source.trim) {
-              if (bppb.version != newBppb.version)
-                message ::= s"perlPackages.${bppb.nixpkgsName}: ${bppb.version} -> ${newBppb.version}"
-              else
-                message ::= s"perlPackages.${bppb.nixpkgsName}: cleanup"
-
-              require(dep.name == newBppb.name, s"${dep.name} => ${newBppb.name}")
-              buildPerlPackageBlocks = buildPerlPackageBlocks - bppb.nixpkgsName + (newBppb.nixpkgsName -> newBppb)
-              `perl-packages.nix` = `perl-packages.nix`.replace(bppb.source.trim, newBppb.source.trim)
-            }
-
-          case Right(bppb) => // insert new dep
-            buildPerlPackageBlocks += bppb.nixpkgsName -> bppb
-            val after = (buildPerlPackageBlocks.until(bppb.nixpkgsName).lastOption getOrElse buildPerlPackageBlocks.last)._2
-            if (CpanErrata.inExternalNixFiles contains bppb.name) {
-              //`perl-packages.nix` = `perl-packages.nix`.replace(after.source.trim, after.source.trim+"\n/*\n  "+bppb.source.trim+"\n*/")
-              //message ::= s"perlPackages.${bppb.nixpkgsName}: init at ${bppb.version}"
-            } else {
-              `perl-packages.nix` = `perl-packages.nix`.replace(after.source.trim, after.source.trim+"\n\n  "+bppb.source.trim)
-              message ::= s"perlPackages.${bppb.nixpkgsName}: init at ${bppb.version}"
-            }
+            require(dep.name == newBppb.name, s"${dep.name} => ${newBppb.name}")
+            buildPerlPackageBlocks = buildPerlPackageBlocks - bppb.nixpkgsName + (newBppb.nixpkgsName -> newBppb)
+            `perl-packages.nix` = `perl-packages.nix`.replace(bppb.source.trim, newBppb.source.trim)
+          }
         }
 
-        val pw = new java.io.PrintWriter(new File(repopath, "/pkgs/top-level/perl-packages.nix"))
-        pw write `perl-packages.nix`
-        pw.close()
-
-        Some(message.reverse match {
-               case first::Nil  => first
-               case first::rest => first::""::"dependencies:"::rest.sorted mkString "\n"
-             })
+      case Right(bppb) => // insert new dep
+        buildPerlPackageBlocks += bppb.nixpkgsName -> bppb
+        val after = (buildPerlPackageBlocks.until(bppb.nixpkgsName).lastOption getOrElse buildPerlPackageBlocks.last)._2
+        if (CpanErrata.inExternalNixFiles contains bppb.name) {
+          //`perl-packages.nix` = `perl-packages.nix`.replace(after.source.trim, after.source.trim+"\n/*\n  "+bppb.source.trim+"\n*/")
+          //message ::= s"perlPackages.${bppb.nixpkgsName}: init at ${bppb.version}"
+        } else {
+          `perl-packages.nix` = `perl-packages.nix`.replace(after.source.trim, after.source.trim+"\n\n  "+bppb.source.trim)
+          message ::= s"perlPackages.${bppb.nixpkgsName}: init at ${bppb.version}"
+        }
     }
+
+    val pw = new java.io.PrintWriter(new File(repopath, "/pkgs/top-level/perl-packages.nix"))
+    pw write `perl-packages.nix`
+    pw.close()
+
+    Some(message.reverse match {
+           case first::Nil  => first
+           case first::rest => first::""::"dependencies:"::rest.sorted mkString "\n"
+         })
   }
 }
 
@@ -986,11 +996,12 @@ case class RemoteWorker(user: String, host: String, system: String, sshopts: Lis
 object Cpan2Nix {
   // todo: command-line switches
   val doCheckout  = true
+  val doInsert    = /*"GeoIP2" :: "MaxMind-DB-Reader-XS" :: "MaxMind-DB-Writer" ::*/ Nil
   val doUpgrade   = true
   val doTestBuild = true
 
 //val remoteBuild: Option[RemoteWorker] = None
-  val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "x86_64-linux",  "-p922" :: Nil, 16))
+  val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "x86_64-linux",  "-p922" :: Nil,  1))
 //val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("user",     "172.16.224.2",             "x86_64-darwin",            Nil,  4))
 //val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "aarch64-linux",            Nil, 32))
 
@@ -1011,6 +1022,7 @@ object Cpan2Nix {
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
+//        val branchName = "perl-geoip2"
 //        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
@@ -1080,6 +1092,17 @@ object Cpan2Nix {
           println(s"WARNING: parsed but not evaluated (probably not from CPAN): perlPackages.${bppb.nixpkgsName}")
         }
 
+        if (doInsert.nonEmpty) {
+          val toadd = doInsert flatMap (name => Cpan.byName(Name(name)))
+          for (cp      <- toadd;
+               message <- pullRequester.prepareCommit(None, cp, upgradeDeps = false)) {
+            println("----")
+            println(message)
+
+            Process("git" :: "commit" :: "-m" :: s"[cpan2nix] $message" :: "pkgs/top-level/perl-packages.nix" :: Nil,
+                    cwd = repopath).!
+          }
+        }
 
         if (doUpgrade) {
           val toupdate = nixPkgs.allPackages sortBy { case np if np.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
@@ -1095,7 +1118,7 @@ object Cpan2Nix {
 
           for (np      <- toupdate;
                cp      <- canUpgrade(np);
-               message <- pullRequester.prepareCommit(np, cp)) {
+               message <- pullRequester.prepareCommit(Some(np), cp, upgradeDeps = true)) {
             println("----")
             println(message)
 

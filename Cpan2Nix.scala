@@ -538,9 +538,8 @@ object CpanErrata {
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
                                     , CpanPackage fromPath "S/SA/SATOH/Test-Time-0.05.tar.gz"                        // 0.06,0.07 test failed
                                     , CpanPackage fromPath "R/RJ/RJBS/Getopt-Long-Descriptive-0.102.tar.gz"          // It broke perlPackages.MouseXGetOpt (https://github.com/NixOS/nixpkgs/issues/45960#issuecomment-418176613)
-                                    , CpanPackage fromPath "E/ET/ETHER/MooseX-Getopt-0.72.tar.gz"                    // 0.73 breaks perlPackages.CatalystRuntime
                                     , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
-                                    , CpanPackage fromPath "S/SH/SHANCOCK/Perl-Tidy-20180220.tar.gz"                 // 201810xx test not passed
+                                    , CpanPackage fromPath "S/SH/SHANCOCK/Perl-Tidy-20180220.tar.gz"                 // 201811xx test not passed
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -1127,15 +1126,16 @@ object Cpan2Nix {
           }
         }
 
-//      require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs" :: Nil, cwd = repopath).! == 0)
+//      require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"            :: Nil, cwd = repopath).! == 0)
+//      require(Process("git" :: "cherry-pick"  :: "3e3dc358d1be2cd51d88b760fcfc8ec162ae6302" :: Nil, cwd = repopath).! == 0)
 
         if (doTestBuild) {
           // try to build
           val nixcode = s"""|let
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs528 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
-                            |# pkgs530 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; overlays = [ (self: super: { perlPackages = self.perl530Packages; }) ]; };
+                            |  pkgs528 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
+                            |# pkgs530 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
                             |  lib.filter (x: (x != null) && (lib.isDerivation x) && x.meta.available) (

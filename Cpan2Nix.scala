@@ -367,6 +367,7 @@ object CpanErrata {
                                     , Name("Test-CleanNamespaces"             ) -> Set( Name("Moose")
                                                                                       , Name("MooseX-Role-Parameterized"))  // circular dependency
                                     , Name("Tie-Hash-Indexed"                 ) -> Set( Name("Test"))                       // wrong test framework?
+                                    , Name("libapreq2"                        ) -> Set( Name("mod_perl"))                   // https://github.com/NixOS/nixpkgs/pull/59861
                                     ) withDefaultValue Set.empty
 
 
@@ -623,11 +624,11 @@ object Cpan {
 class PerlDerivation(repopath: File, name: String /* = "perl528"*/, val version: String /* = "5.28"*/) {
   private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
-//                                     :: "--builders" :: "ssh://root@172.16.224.1             x86_64-linux  /home/user/.ssh/id_ed25519                   4 4 kvm,big-parallel"
-                                       :: ( Cpan2Nix.remoteBuild match {
+                                       :: ( Cpan2Nix.builder_X86_64 match {
                                              case Some(remoteWorker) =>
                                                 ( "--option" :: "builders-use-substitutes" :: "true"
-                                               :: "--builders" :: s"ssh://${remoteWorker.user}@${remoteWorker.host} ${remoteWorker.system} /home/user/.ssh/id_ed25519 ${remoteWorker.concurrency} ${remoteWorker.concurrency} kvm,big-parallel"
+                                               :: "-j0"
+                                               :: "--builders" :: s"ssh://${remoteWorker.user}@${remoteWorker.host} ${remoteWorker.system} /home/user/.ssh/id_ed25519 ${remoteWorker.concurrency} ${remoteWorker.concurrency} kvm,big-parallel,gccarch-sandybridge,gccarch-skylake"
                                                :: Nil
                                                 )
                                               case None =>
@@ -637,7 +638,7 @@ class PerlDerivation(repopath: File, name: String /* = "perl528"*/, val version:
                                           cwd = repopath,
                                           "NIXPKGS_CONFIG" -> "",
                                           "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}",
-                                          "NIX_SSHOPTS"    -> Cpan2Nix.remoteBuild.fold("")(_.sshopts.mkString(" "))
+                                          "NIX_SSHOPTS"    -> Cpan2Nix.builder_X86_64.fold("")(_.sshopts.mkString(" "))
                                         ).!!.trim
 
   private[this] val localVersions = collection.mutable.HashMap.empty[Mod, Option[Version]]
@@ -993,16 +994,19 @@ case class RemoteWorker(user: String, host: String, system: String, sshopts: Lis
 }
 
 object Cpan2Nix {
+//val builder_X86_64:  Option[RemoteWorker] = None // locally
+  val builder_X86_64:  Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "x86_64-linux",  "-p922" :: Nil,  4))
+//val builder_DARWIN:  Option[RemoteWorker] = Some(RemoteWorker("user",     "172.16.224.2",             "x86_64-darwin",            Nil,  4))
+  val builder_AARCH64: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "aarch64-linux",            Nil, 32))
+
   // todo: command-line switches
   val doCheckout  = true
   val doInsert    = /*"GeoIP2" :: "MaxMind-DB-Reader-XS" :: "MaxMind-DB-Writer" ::*/ Nil
   val doUpgrade   = true
-  val doTestBuild = true
+  val doTestBuild: List[Option[RemoteWorker]] = List( builder_AARCH64
+                                                //  , builder_X86_64
+                                                    )
 
-//val remoteBuild: Option[RemoteWorker] = None
-  val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "x86_64-linux",  "-p922" :: Nil,  1))
-//val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("user",     "172.16.224.2",             "x86_64-darwin",            Nil,  4))
-//val remoteBuild: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "aarch64-linux",            Nil, 32))
 
 
   def main(args: Array[String]) {
@@ -1025,6 +1029,13 @@ object Cpan2Nix {
 //        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
+
+          // perl 5.28.1 -> 5.28.2 and manual updates outside perl-packages.nix
+          require(Process("git" :: "cherry-pick" :: "5cd52c25969d8f6857cb751bd9ca8b98e8a684b0"          :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick" :: "c80f16350b0fee8c476823918ab64a3e62027002"          :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick" :: "dbde36d7e8e579c1cbcc56b7424eeae97f74cc13"          :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick" :: "979459cff9e3053a165a4ffe593cfb5252478705"          :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick" :: "0f0c0e7d0f31d2204287b4706110d8fde7ff586f"          :: Nil, cwd = repopath).! == 0)
         }
 
         val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
@@ -1129,13 +1140,13 @@ object Cpan2Nix {
 //      require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"            :: Nil, cwd = repopath).! == 0)
 //      require(Process("git" :: "cherry-pick"  :: "3e3dc358d1be2cd51d88b760fcfc8ec162ae6302" :: Nil, cwd = repopath).! == 0)
 
-        if (doTestBuild) {
+        for (builder <- doTestBuild) {
           // try to build
           val nixcode = s"""|let
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs528 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
-                            |# pkgs530 = import <nixpkgs> { ${remoteBuild.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perlPackages = self.perl530Packages; }) ]; };
+                            |  pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
+                            |# pkgs530 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
                             |  lib.filter (x: (x != null) && (lib.isDerivation x) && x.meta.available) (
@@ -1181,7 +1192,7 @@ object Cpan2Nix {
                                          ).!!.split('\n').toList
                                 )
 
-          val t = remoteBuild match {
+          val t = builder match {
                     case Some(RemoteWorker(user, host, system, sshopts, concurrency)) =>
                       for (drvs <-  instantiateDrvs;
 

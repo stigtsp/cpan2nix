@@ -1144,8 +1144,10 @@ object Cpan2Nix {
         if (doCheckout) {
           // set minimum version to 5.28.2
           require(Process("git" :: "cherry-pick"  :: "8d0e5bebaf8e3ce739624b26897ba88ac94e9db7"          :: Nil, cwd = repopath).! == 0)
+          // perl-meta-priority++
+          require(Process("git" :: "cherry-pick"  :: "0fad0b4e5b94a911a4a30b8ee3ca5a5c6d2258c2"          :: Nil, cwd = repopath).! == 0)
         }
-        require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
+//      require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
 
 
         for (builder <- doTestBuild) {
@@ -1157,36 +1159,32 @@ object Cpan2Nix {
                             |# pkgs530 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl530; perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
-                            |  lib.filter (x: (x != null) && (lib.isDerivation x) && x.meta.available) (
                             |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra ])
                             |                         [ /*pkgs526*/ pkgs528 ])
-                            |   ++
-                            |   (lib.concatMap (pp:   (with pp; [
-                            |                            perl
-                            |                            BerkeleyDB
-                            |                            CompressRawZlib
-                            |                            DBDSQLite
-                            |                            DBDmysql
-                            |                            DBDPg
-                            |                            DBDsybase
-                            |                            DBFile
-                            |                            maatkit
-                            |                            MNI-Perllib
-                            |                            ${ pullRequester.buildPerlPackageBlocks flatMap {
-                                                              case ( "RegexpCopy"                  // 2003
-                                                                   | "libfile-stripnondeterminism" // need manual upgrade
-                                                                   | "strip-nondeterminism"
-                                                                   , _)       => Nil
-                                                              case (name, bp) => List(bp.nixpkgsName)
-                                                            } mkString " "
-                                                         }
-                            |                         ])
-                            |                  ) [  # pkgs.perlPackages
-                            |
-                            |                       # pkgs528.perl526Packages
-                            |                         pkgs528.perlPackages
-                            |                    ])
-                            |  )
+                            |   ++ [
+                            |     (pkgs528.perl.withPackages(p: lib.filter
+                            |                                     (x: (x != null) && (lib.isDerivation x) && x.meta.available)
+                            |                                     [
+                            |                                       p.BerkeleyDB
+                            |                                       p.CompressRawZlib
+                            |                                       p.DBDSQLite
+                            |                                       p.DBDmysql
+                            |                                       p.DBDPg
+                            |                                       p.DBDsybase
+                            |                                       p.DBFile
+                            |                                       p.maatkit
+                            |                                       p.MNI-Perllib
+                            |                                       ${ pullRequester.buildPerlPackageBlocks flatMap {
+                                                                         case ( "RegexpCopy"                  // 2003
+                                                                              | "libfile-stripnondeterminism" // need manual upgrade
+                                                                              | "strip-nondeterminism"
+                                                                              , _)       => Nil
+                                                                         case (name, bp) => List("p." + bp.nixpkgsName)
+                                                                       } mkString " "
+                                                                    }
+                            |                                     ]
+                            |                               ))
+                            |   ]
                             |""".stripMargin
           println(nixcode)
 

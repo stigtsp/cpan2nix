@@ -246,10 +246,12 @@ case class CpanPackage private(author: Author, name: Name, version: Version, pat
            (k, v) <- m) {
         runtime += k -> (v.asString orElse v.asNumber.map(_.toString) getOrElse ???)
       }
-      for (path   <- List( List( "prereqs", "configure", "requires")
-                         , List( "prereqs", "build",     "requires")
-                         , List( "prereqs", "test",      "requires")
-                         , List( "prereqs", "test",      "suggests") );
+      for (path   <- List( List( "prereqs",     "configure", "requires")
+                         , List( "prereqs",     "build",     "requires")
+                         , List( "prereqs",     "test",      "requires")
+                         , List( "prereqs",     "test",      "suggests")
+                         , List( "x_alienfile", "requires",  "share"   )
+                         );
            m      <- path.foldLeft[io.circe.ACursor](json.hcursor)(_ downField _).as[Map[String,io.circe.Json]];
            (k, v) <- m) {
         build += k -> (v.asString orElse v.asNumber.map(_.toString) getOrElse ???)
@@ -372,8 +374,7 @@ object CpanErrata {
 
 
   // *** add to nixpkgs dependencies missing on cpan (usually due to missing .meta file; FIXME: look into Makefile.PL then)
-  val extraBuildDependencies   = Map( Name("Alien-Build"                             ) -> Map( Mod("PkgConfig")                        -> Version("0"))
-                                    , Name("Alien-GMP"                               ) -> Map( Mod("Devel::CheckLib")                  -> Version("0"))
+  val extraBuildDependencies   = Map( Name("Alien-GMP"                               ) -> Map( Mod("Devel::CheckLib")                  -> Version("0"))
                                     , Name("Autodia"                                 ) -> Map( Mod("DBI")                              -> Version("0"))
                                     , Name("Array-FIFO"                              ) -> Map( Mod("Test::Trap")                       -> Version("0")
                                                                                              , Mod("Test::Deep::NoTest")               -> Version("0"))
@@ -494,7 +495,8 @@ object CpanErrata {
                                     , Name("Twiggy"                                  ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("YAML"                                    ) -> Map( Mod("Test::Base")                       -> Version("0"))
                                     ) withDefaultValue Map.empty
-  val extraRuntimeDependencies = Map( Name("Any-Moose"                        ) -> Map( Mod("Mouse")                        -> Version("0")
+  val extraRuntimeDependencies = Map( Name("Alien-Build"                      ) -> Map( Mod("PkgConfig")                    -> Version("0"))
+                                    , Name("Any-Moose"                        ) -> Map( Mod("Mouse")                        -> Version("0")
                                                                                       , Mod("Moose")                        -> Version("0"))
                                     , Name("Crypt-PKCS10"                     ) -> Map( Mod("Convert::ASN1")                -> Version("0"))
                                     , Name("GDTextUtil"                       ) -> Map( Mod("GD")                           -> Version("0"))
@@ -540,7 +542,7 @@ object CpanErrata {
                                     , CpanPackage fromPath "S/SA/SATOH/Test-Time-0.05.tar.gz"                        // 0.06,0.07 test failed
                                     , CpanPackage fromPath "R/RJ/RJBS/Getopt-Long-Descriptive-0.102.tar.gz"          // It broke perlPackages.MouseXGetOpt (https://github.com/NixOS/nixpkgs/issues/45960#issuecomment-418176613)
                                     , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
-                                    , CpanPackage fromPath "S/SH/SHANCOCK/Perl-Tidy-20180220.tar.gz"                 // 201811xx test not passed
+                                    , CpanPackage fromPath "S/SH/SHLOMIF/XML-LibXML-2.0134.tar.gz"                   // newer version uses Alien-Libxml2 which is unable to find libxml/parser.h
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -1003,9 +1005,9 @@ object Cpan2Nix {
   val doCheckout  = true
   val doInsert    = /*"GeoIP2" :: "MaxMind-DB-Reader-XS" :: "MaxMind-DB-Writer" ::*/ Nil
   val doUpgrade   = true
-  val doTestBuild: List[Option[RemoteWorker]] = List( builder_AARCH64
-                                                //  , builder_X86_64
-                                                    )
+  val doTestBuild: List[Option[RemoteWorker]] = // builder_AARCH64 ::
+                                                   builder_X86_64 ::
+                                                   Nil
 
 
 
@@ -1036,6 +1038,8 @@ object Cpan2Nix {
           require(Process("git" :: "cherry-pick" :: "dbde36d7e8e579c1cbcc56b7424eeae97f74cc13"          :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "cherry-pick" :: "979459cff9e3053a165a4ffe593cfb5252478705"          :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "cherry-pick" :: "0f0c0e7d0f31d2204287b4706110d8fde7ff586f"          :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick" :: "a786330302d7cf000bd5c6e33b10d6cfa8c19c2d"          :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick" :: "d285656486911f7f29624eea22e3bb2c77d05fc7"          :: Nil, cwd = repopath).! == 0)
         }
 
         val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
@@ -1137,16 +1141,20 @@ object Cpan2Nix {
           }
         }
 
-//      require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"            :: Nil, cwd = repopath).! == 0)
-//      require(Process("git" :: "cherry-pick"  :: "3e3dc358d1be2cd51d88b760fcfc8ec162ae6302" :: Nil, cwd = repopath).! == 0)
+        if (doCheckout) {
+          // set minimum version to 5.28.2
+          require(Process("git" :: "cherry-pick"  :: "8d0e5bebaf8e3ce739624b26897ba88ac94e9db7"          :: Nil, cwd = repopath).! == 0)
+        }
+        require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
+
 
         for (builder <- doTestBuild) {
           // try to build
           val nixcode = s"""|let
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perlPackages = self.perl528Packages; }) ]; };
-                            |# pkgs530 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perlPackages = self.perl530Packages; }) ]; };
+                            |  pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl528; perlPackages = self.perl528Packages; }) ]; };
+                            |# pkgs530 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl530; perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
                             |  lib.filter (x: (x != null) && (lib.isDerivation x) && x.meta.available) (

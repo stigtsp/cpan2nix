@@ -998,7 +998,9 @@ case class RemoteWorker(user: String, host: String, system: String, sshopts: Lis
 object Cpan2Nix {
 //val builder_X86_64:  Option[RemoteWorker] = None // locally
   val builder_X86_64:  Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "x86_64-linux",  "-p922" :: Nil,  4))
+  val builder_I686:    Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "i686-linux",    "-p922" :: Nil,  4))
 //val builder_DARWIN:  Option[RemoteWorker] = Some(RemoteWorker("user",     "172.16.224.2",             "x86_64-darwin",            Nil,  4))
+  val builder_AARCH32: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "armv7l-linux",             Nil, 32))
   val builder_AARCH64: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "aarch64-linux",            Nil, 32))
 
   // todo: command-line switches
@@ -1006,7 +1008,9 @@ object Cpan2Nix {
   val doInsert    = /*"GeoIP2" :: "MaxMind-DB-Reader-XS" :: "MaxMind-DB-Writer" ::*/ Nil
   val doUpgrade   = true
   val doTestBuild: List[Option[RemoteWorker]] = // builder_AARCH64 ::
-                                                   builder_X86_64 ::
+                                                // builder_AARCH32 ::
+                                                // builder_I686    ::
+                                                   builder_X86_64  ::
                                                    Nil
 
 
@@ -1032,14 +1036,14 @@ object Cpan2Nix {
           require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
 
-          // perl 5.28.1 -> 5.28.2 and manual updates outside perl-packages.nix
-          require(Process("git" :: "cherry-pick" :: "5cd52c25969d8f6857cb751bd9ca8b98e8a684b0"          :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick" :: "c80f16350b0fee8c476823918ab64a3e62027002"          :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick" :: "dbde36d7e8e579c1cbcc56b7424eeae97f74cc13"          :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick" :: "979459cff9e3053a165a4ffe593cfb5252478705"          :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick" :: "0f0c0e7d0f31d2204287b4706110d8fde7ff586f"          :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick" :: "a786330302d7cf000bd5c6e33b10d6cfa8c19c2d"          :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick" :: "d285656486911f7f29624eea22e3bb2c77d05fc7"          :: Nil, cwd = repopath).! == 0)
+//        // perl 5.28.1 -> 5.28.2 and manual updates outside perl-packages.nix
+//        require(Process("git" :: "cherry-pick" :: "5cd52c25969d8f6857cb751bd9ca8b98e8a684b0"          :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "cherry-pick" :: "c80f16350b0fee8c476823918ab64a3e62027002"          :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "cherry-pick" :: "dbde36d7e8e579c1cbcc56b7424eeae97f74cc13"          :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "cherry-pick" :: "979459cff9e3053a165a4ffe593cfb5252478705"          :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "cherry-pick" :: "0f0c0e7d0f31d2204287b4706110d8fde7ff586f"          :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "cherry-pick" :: "a786330302d7cf000bd5c6e33b10d6cfa8c19c2d"          :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "cherry-pick" :: "d285656486911f7f29624eea22e3bb2c77d05fc7"          :: Nil, cwd = repopath).! == 0)
         }
 
         val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
@@ -1139,15 +1143,15 @@ object Cpan2Nix {
             Process("git" :: "commit" :: "-m" :: s"[cpan2nix] $message" :: "pkgs/top-level/perl-packages.nix" :: Nil,
                     cwd = repopath).!
           }
-        }
 
-        if (doCheckout) {
-          // set minimum version to 5.28.2
-          require(Process("git" :: "cherry-pick"  :: "8d0e5bebaf8e3ce739624b26897ba88ac94e9db7"          :: Nil, cwd = repopath).! == 0)
-          // perl-meta-priority++
-          require(Process("git" :: "cherry-pick"  :: "0fad0b4e5b94a911a4a30b8ee3ca5a5c6d2258c2"          :: Nil, cwd = repopath).! == 0)
+//        if (doCheckout) {
+//          // set minimum version to 5.28.2
+//          require(Process("git" :: "cherry-pick"  :: "8d0e5bebaf8e3ce739624b26897ba88ac94e9db7"          :: Nil, cwd = repopath).! == 0)
+//          // perl-meta-priority++
+//          require(Process("git" :: "cherry-pick"  :: "0fad0b4e5b94a911a4a30b8ee3ca5a5c6d2258c2"          :: Nil, cwd = repopath).! == 0)
+//        }
+//        require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
         }
-//      require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
 
 
         for (builder <- doTestBuild) {
@@ -1209,10 +1213,12 @@ object Cpan2Nix {
                            // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
                            _ <- Task.wander(drvs.sliding(1000,1000)) { slice =>
                                   Task {
-                                    val cmd = ("ssh" :: sshopts ::: s"$user@$host" :: "--"
+                                    val cmd = ("ssh" :: "-tt" // allocate remote tty so local Ctrl-C would kill the remote build
+                                                     :: sshopts ::: s"$user@$host" :: "--"
                                                      :: "nix-store" :: "--realise" /*:: "--ignore-unknown"*/
                                                      :: "--sandbox"
                                                      :: "--option"  :: "binary-caches" :: "http://cache.nixos.org/"
+                                                     :: "--extra-platforms" :: system // forcing build for the system (needed for "armv7l-linux" and "i686-linux")
                                                      :: s"-j${concurrency}"
                                                      :: "--keep-going"
                                                      :: slice)

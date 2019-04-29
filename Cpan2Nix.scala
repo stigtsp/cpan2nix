@@ -321,6 +321,7 @@ object CpanErrata {
   def parseNameVersion(s: String): (Name, Version) = nvcache.getOrElseUpdate(s, {
     val (n, v) = s match {
       case "Spreadsheet-WriteExcel-WebPivot2" => (Name("Spreadsheet-WriteExcel-WebPivot"), Version("2"))
+      case "Devel-PPPort-3.48-again"          => (Name("Devel-PPPort"),                    Version("3.48-again"))
       case exception1 (n, v)                  => (Name(n),                                 Version(v))
       case suspicious1(n, v)                  => System.err.println(s"version of `$s` might be detected incorrectly as `$v`")
                                                  (Name(n),                                 Version(v))
@@ -543,6 +544,7 @@ object CpanErrata {
                                     , CpanPackage fromPath "R/RJ/RJBS/Getopt-Long-Descriptive-0.102.tar.gz"          // It broke perlPackages.MouseXGetOpt (https://github.com/NixOS/nixpkgs/issues/45960#issuecomment-418176613)
                                     , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
                                     , CpanPackage fromPath "S/SH/SHLOMIF/XML-LibXML-2.0134.tar.gz"                   // newer version uses Alien-Libxml2 which is unable to find libxml/parser.h
+                                    , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -1008,9 +1010,9 @@ object Cpan2Nix {
   val doInsert    = /*"GeoIP2" :: "MaxMind-DB-Reader-XS" :: "MaxMind-DB-Writer" ::*/ Nil
   val doUpgrade   = true
   val doTestBuild: List[Option[RemoteWorker]] = // builder_AARCH64 ::
-                                                // builder_AARCH32 ::
+                                                   builder_AARCH32 ::
                                                 // builder_I686    ::
-                                                   builder_X86_64  ::
+                                                // builder_X86_64  ::
                                                    Nil
 
 
@@ -1159,13 +1161,14 @@ object Cpan2Nix {
           val nixcode = s"""|let
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl528; perlPackages = self.perl528Packages; }) ]; };
+                            |  pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true;                                                                                              };
                             |# pkgs530 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl530; perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
                             |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra ])
-                            |                         [ /*pkgs526*/ pkgs528 ])
-                            |   ++ [
+                            |                  [ /*pkgs526*/ pkgs528 ])
+                            |   ++
+                            |   [
                             |     (pkgs528.perl.withPackages(p: lib.filter
                             |                                     (x: (x != null) && (lib.isDerivation x) && x.meta.available)
                             |                                     [
@@ -1189,6 +1192,12 @@ object Cpan2Nix {
                             |                                     ]
                             |                               ))
                             |   ]
+                            |   ++
+                            |   (lib.concatMap (pkgs: [ (pkgs.pkgsCross.armv7l-hf-multiplatform.perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |                           (pkgs.pkgsCross.aarch64-multiplatform  .perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |                           (pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |                         ])
+                            |                  [ /*pkgs526*/ pkgs528 ])
                             |""".stripMargin
           println(nixcode)
 

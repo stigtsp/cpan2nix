@@ -1009,8 +1009,8 @@ object Cpan2Nix {
   val doCheckout  = true
   val doInsert    = /*"GeoIP2" :: "MaxMind-DB-Reader-XS" :: "MaxMind-DB-Writer" ::*/ Nil
   val doUpgrade   = true
-  val doTestBuild: List[Option[RemoteWorker]] = // builder_AARCH64 ::
-                                                   builder_AARCH32 ::
+  val doTestBuild: List[Option[RemoteWorker]] =    builder_AARCH64 ::
+                                                // builder_AARCH32 ::
                                                 // builder_I686    ::
                                                 // builder_X86_64  ::
                                                    Nil
@@ -1166,7 +1166,7 @@ object Cpan2Nix {
                             |  inherit (pkgs528) lib;
                             |in
                             |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra ])
-                            |                  [ /*pkgs526*/ pkgs528 ])
+                            |                  [ pkgs528 ])
                             |   ++
                             |   [
                             |     (pkgs528.perl.withPackages(p: lib.filter
@@ -1196,8 +1196,9 @@ object Cpan2Nix {
                             |   (lib.concatMap (pkgs: [ (pkgs.pkgsCross.armv7l-hf-multiplatform.perl.withPackages(p: [p.LWP p.XMLParser]))
                             |                           (pkgs.pkgsCross.aarch64-multiplatform  .perl.withPackages(p: [p.LWP p.XMLParser]))
                             |                           (pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |                           #pkgs.pkgsCross.armv7l-hf-multiplatform.perl.pkgs.ModuleBuild
                             |                         ])
-                            |                  [ /*pkgs526*/ pkgs528 ])
+                            |                  [ pkgs528 ])
                             |""".stripMargin
           println(nixcode)
 

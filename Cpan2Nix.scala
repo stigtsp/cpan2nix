@@ -159,7 +159,7 @@ object SHA256 {
 
 
 
-case class NixPackage(maybeauthor: Option[Author], name: Name, version: Version, url: String)
+case class NixPackage(maybeauthor: Option[Author], pname: Name, version: Version, url: String)
 
 object NixPackage {
   val mirrors    = List( "mirror://cpan"
@@ -176,9 +176,9 @@ object NixPackage {
                        ).map(_.replace(".", "\\.")).mkString("(?:", "|", ")")
   private[this] val re2 = (mirrors + """/+authors/id/[A-Z0-9-]/[A-Z0-9-]{2}/([A-Z0-9-]+)(?:/[^/]+)*/+([^/]+)""" + extentions).r
   private[this] val re3 = (mirrors + """/+modules/by-module/[^/]+/([^/]+)"""                                    + extentions).r
-  def fromString(url: String) = url match {
-    case re2(a, nameVersion) => val (n, v) = CpanErrata parseNameVersion nameVersion; NixPackage(Some(Author(a)), n, v, url)
-    case re3(   nameVersion) => val (n, v) = CpanErrata parseNameVersion nameVersion; NixPackage(None           , n, v, url)
+  def fromURL(url: String) = url match {
+    case re2(a, pnameVersion) => val (n, v) = CpanErrata parseNameVersion pnameVersion; NixPackage(Some(Author(a)), n, v, url)
+    case re3(   pnameVersion) => val (n, v) = CpanErrata parseNameVersion pnameVersion; NixPackage(None           , n, v, url)
   }
 }
 
@@ -187,6 +187,7 @@ class NixPkgs(repopath: String /*File or URL*/) {
   // eval pkgs.perlPackages and extract all CPAN urls
   lazy val allPackages: List[NixPackage] = {
 
+    // TODO: fallback to src.urls if there is no `pname`
     val nixcode = """|let
                      |  pkgs = import <nixpkgs> { config.allowBroken = true; };
                      |  lib = pkgs.lib;
@@ -201,7 +202,7 @@ class NixPkgs(repopath: String /*File or URL*/) {
                          ).!!
 
     "\"([^ \"]+)\"".r.findAllMatchIn(output).map(_ group 1).toList.distinct flatMap { url =>
-      Try(NixPackage.fromString(url)) match {
+      Try(NixPackage.fromURL(url)) match {
         case Failure(_)  => //System.err.println(s"ignore non-CPAN url $url")
                             None
         case Success(ca) => Some(ca)
@@ -213,7 +214,7 @@ class NixPkgs(repopath: String /*File or URL*/) {
 
 
 
-case class CpanPackage private(author: Author, name: Name, version: Version, path: String) {
+case class CpanPackage private(author: Author, pname: Name, version: Version, path: String) {
   lazy val tarballFile: File         = Cpan.downloadFile(this.path) getOrElse (throw new RuntimeException(s"${this.path} not found"))
   lazy val metaFile:    Option[File] = Cpan.downloadFile((NixPackage.extentions+"$").r.replaceAllIn(this.path, ".meta"  ))
 //lazy val readmeFile:  Option[File] = Cpan.downloadFile((NixPackage.extentions+"$").r.replaceAllIn(this.path, ".readme"))
@@ -223,7 +224,7 @@ case class CpanPackage private(author: Author, name: Name, version: Version, pat
                                              Array.empty // FIXME: like files in .zip
                                            else
                                              s"tar --list --warning=no-unknown-keyword --file $tarballFile".!! split '\n'
-  lazy val isModule:       Boolean       = !name.toString.equalsIgnoreCase("Module-Build") && filesInTarball.contains(s"$name-$version/Build.PL")
+  lazy val isModule:       Boolean       = !pname.toString.equalsIgnoreCase("Module-Build") && filesInTarball.contains(s"$pname-$version/Build.PL")
 
   case class MetaExcerpt(runtimeMODs: Map[Mod, Version],
                          buildMODs:   Map[Mod, Version],
@@ -292,7 +293,7 @@ case class CpanPackage private(author: Author, name: Name, version: Version, pat
                )
   }
 
-  def suggestedNixpkgsName: String = name.toString.replace("-", "").replace("+", "").replace("_", "")
+  def suggestedNixpkgsName: String = pname.toString.replace("-", "").replace("+", "").replace("_", "")
 }
 
 
@@ -545,6 +546,7 @@ object CpanErrata {
                                     , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
                                     , CpanPackage fromPath "S/SH/SHLOMIF/XML-LibXML-2.0134.tar.gz"                   // newer version uses Alien-Libxml2 which is unable to find libxml/parser.h
                                     , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
+                                    , CpanPackage fromPath "T/TI/TINITA/Inline-0.83.tar.gz"                          // prevent downgrade to 0.82
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -577,10 +579,10 @@ object Cpan {
       case re(modstr, modverstr, path) => Try(CpanPackage fromPath path) match {
                                             case Success(cp) =>
                                               val mod        = Mod(modstr)
-                                              byMod          (mod               ) += cp
-                                              byName         (           cp.name) += cp
-                                              byAuthorAndName(cp.author->cp.name) += cp
-                                              providedMods   (cp                ) += mod -> Version(modverstr)
+                                              byMod          (mod                ) += cp
+                                              byName         (           cp.pname) += cp
+                                              byAuthorAndName(cp.author->cp.pname) += cp
+                                              providedMods   (cp                 ) += mod -> Version(modverstr)
                                             case Failure(e) =>
                                               System.err.println(s"ignore `$path' $e")
                                           }
@@ -665,22 +667,36 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
   // a typical code block in `perl-packages.nix`
   case class BuildPerlPackageBlock(source: String) {
     val nixpkgsName:                        String   =                   """(?s)^ {1,2}(\S+)"""                .r.findFirstMatchIn(source).get.group(1)
+    val pnameString:                 Option[String]  =                   """(?s)pname\s*=\s*"([^"]+)";"""      .r.findFirstMatchIn(source).map(_ group 1)
     val versionString:               Option[String]  =                   """(?s)version\s*=\s*"([^"]+)";"""    .r.findFirstMatchIn(source).map(_ group 1)
-    val nameAndVersion:                     String   =                   """(?s)name\s*=\s*"([^"]+)";"""       .r.findFirstMatchIn(source).get.group(1)
+    val pnameAndVersion:             Option[String]  =                   """(?s) name\s*=\s*"([^"]+)";"""     .r.findFirstMatchIn(source).map(_ group 1)
     val url:                                String   = /*Try { */        """(?s)url\s*=\s*"?([^";]+)"?;"""     .r.findFirstMatchIn(source).get.group(1) /*} getOrElse {  println(source); ??? }*/
     val sha256:                             SHA256   = SHA256 fromString """(?s)sha256\s*=\s*"([a-z0-9]+)";""" .r.findFirstMatchIn(source).get.group(1)
-    val resolvedNameAndVersion:             String   = versionString.fold(nameAndVersion)(nameAndVersion.replace("${version}", _))
-    val resolvedUrl:                        String   = versionString.fold(url           )(url           .replace("${version}", _)).replace("${name}", resolvedNameAndVersion)
+    val resolvedPnameAndVersion:            String   = (pnameString, versionString, pnameAndVersion) match {
+                                                          case (          _, None         , Some(name)) => name
+                                                          case (          _, Some(version), Some(name)) => name.replace("${version}", version)
+                                                          case (Some(pname), Some(version), None      ) => s"$pname-$version"
+                                                       }
+    val resolvedUrl:                        String   = (pnameString, versionString, pnameAndVersion) match {
+                                                          case (          _, Some(version), Some(name)) => url.replace("${name}", name).replace("${version}", version)
+                                                          case (          _, _            , Some(name)) => url.replace("${name}", name)
+                                                          case (          _, Some(version), _         ) => url                         .replace("${version}", version)
+                                                          case _                                        => url
+                                                       }
     val propagatedBuildInputs: Option[Array[String]] = """(?s)propagatedBuildInputs\s*=\s*\[([^]]*)\]"""       .r.findFirstMatchIn(source).map(m => """\([^)]+\)|\S+""".r.findAllIn(m.group(1)).toArray)
     val buildInputs:           Option[Array[String]] = """(?s)buildInputs\s*=\s*\[([^]]*)\]"""                 .r.findFirstMatchIn(source).map(m => """\([^)]+\)|\S+""".r.findAllIn(m.group(1)).toArray)
     val licenses:              Option[Array[String]] = """(?s)license\s*=\s*(with[^;]+;\s*)\[([^]]*)\]"""      .r.findFirstMatchIn(source).map(_ group 1 split "\\s+")
     val doCheck:                     Option[String]  =                   """(?s)doCheck\s*=\s*([^;]+);"""      .r.findFirstMatchIn(source).map(_ group 1)
 
-    val (name, version) = CpanErrata.parseNameVersion(resolvedNameAndVersion)
+    val (pname, version) = (pnameString, versionString) match {
+                             case (Some(pname), Some(version)) => (Name(pname), Version(version))
+                             case _                            => CpanErrata.parseNameVersion(resolvedPnameAndVersion)
+                           }
 
     def copy( builder:               String
+            , pnameString:           String
             , versionString:         String
-            , nameAndVersion:        String
+//          , pnameAndVersion:       String
             , url:                   String
             , sha256:                SHA256
             , doCheckOverride:       Option[(Boolean, /*comment*/String)]
@@ -690,10 +706,18 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
             ): BuildPerlPackageBlock = {
       var s = source
       s = """\bbuildPerl(Package|Module)\b"""   .r.replaceAllIn(s, builder)
-      s = """(?s)version\s*=\s*"[^"]+";"""      .r.replaceAllIn(s, s"version = \042${versionString}\042;")
 
-      if (nameAndVersion != new BuildPerlPackageBlock(s).resolvedNameAndVersion)
-        s = """(?s)name\s*=\s*"[^"]+";"""         .r.replaceAllIn(s, s"name = \042${nameAndVersion}\042;")
+
+      (this.pnameString, this.versionString, this.pnameAndVersion) match {
+        case (None,    None,    Some(_)) => s = """(?s)( +)name\s*=\s*"[^"]+";"""    .r.replaceAllIn(s, s"$$1pname = \042${pnameString}\042;\n" + s"$$1version = \042${versionString}\042;")
+        case (None,    Some(_), Some(_)) => s = """(?s)name\s*=\s*"[^"]+";"""        .r.replaceAllIn(s, s"pname = \042${pnameString}\042;")
+                                            s = """(?s)version\s*=\s*"[^"]+";"""     .r.replaceAllIn(s, s"version = \042${versionString}\042;")
+        case (Some(_), Some(_), None   ) => s = """(?s)pname\s*=\s*"[^"]+";"""       .r.replaceAllIn(s, s"pname = \042${pnameString}\042;")
+                                            s = """(?s)version\s*=\s*"[^"]+";"""     .r.replaceAllIn(s, s"version = \042${versionString}\042;")
+      }
+
+//    if (nameAndVersion != new BuildPerlPackageBlock(s).resolvedNameAndVersion)
+//      s = """(?s)name\s*=\s*"[^"]+";"""         .r.replaceAllIn(s, s"name = \042${nameAndVersion}\042;")
 
       if (url != new BuildPerlPackageBlock(s).resolvedUrl)
         s = """(?s)url\s*=\s*"?([^";]+)"?;"""     .r.replaceAllIn(s, s"url = ${url};")
@@ -741,11 +765,12 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
     def updatedTo(cp: CpanPackage): BuildPerlPackageBlock =
       copy( builder               = if (cp.isModule) "buildPerlModule" else "buildPerlPackage"
+          , pnameString           = cp.pname.toString
           , versionString         = cp.version.toString stripPrefix "v"
-          , nameAndVersion        = s"${cp.name}-${cp.version.toString stripPrefix "v"}"
+//        , pnameAndVersion       = s"${cp.pname}-${cp.version.toString stripPrefix "v"}"
           , url                   = s"mirror://cpan/authors/id/${cp.path}"
           , sha256                = cp.sha256
-          , doCheckOverride       = CpanErrata.doCheckOverride get cp.name
+          , doCheckOverride       = CpanErrata.doCheckOverride get cp.pname
           , propagatedBuildInputs = propagatedBuildInputs.toList.flatten.filter(_ contains "pkgs.") ++ (runtimeDeps(cp) -- runtimeDeps(cp).flatMap(deepRuntimeDeps _)).map(escapedNixifiedName).toArray.sorted
           , buildInputs           =           buildInputs.toList.flatten.filter(_ contains "pkgs.") ++ (buildDeps(cp)   -- deepRuntimeDeps(cp)                       ).map(escapedNixifiedName).toArray.sorted
           , licenses              = cp.meta.licenses
@@ -754,7 +779,8 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
     def this(cp: CpanPackage) = this {
       val sb = new java.lang.StringBuilder
       sb append s"""  ${cp.suggestedNixpkgsName} = ${if (cp.isModule) "buildPerlModule" else "buildPerlPackage"} {\n"""
-      sb append s"""    name = "${cp.name}-${cp.version}";\n"""
+      sb append s"""    pname = "${cp.pname}";\n"""
+      sb append s"""    version = "${cp.version}";\n"""
       sb append s"""    src = fetchurl {\n"""
       sb append s"""      url = mirror://cpan/authors/id/${cp.path};\n"""
       sb append s"""      sha256 = "${cp.sha256.base32}";\n"""
@@ -767,7 +793,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
         case Array() =>
         case a       => sb append s"""    buildInputs = [ ${a.map(escapedNixifiedName).sorted mkString " "} ];\n"""
       }
-      CpanErrata.doCheckOverride.get(cp.name) match {
+      CpanErrata.doCheckOverride.get(cp.pname) match {
         case Some((false, comment)) => sb append s"""      doCheck = false; /* $comment */\n"""
         case Some((true, _)) | None =>
       }
@@ -797,10 +823,10 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
     buildPerlPackageBlocks += bppb.nixpkgsName -> bppb
   }
 
-  def nixifiedName(cp: CpanPackage) = buildPerlPackageBlocks.filter(_._2.name == cp.name).toList match {
+  def nixifiedName(cp: CpanPackage) = buildPerlPackageBlocks.filter(_._2.pname == cp.pname).toList match {
     case Nil                                              => cp.suggestedNixpkgsName
     case (nixpkgsName, bppb)::Nil                         => nixpkgsName
-    case blocks if cp.name==Name("Archive-Zip")           => "ArchiveZip"
+    case blocks if cp.pname==Name("Archive-Zip")          => "ArchiveZip"
     case blocks                                           => throw new RuntimeException(s"$cp can be one of ${blocks map (_._1)}")
   }
 
@@ -821,30 +847,30 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
         case _                                                        =>
           Cpan.byMod(mod).toList match {
             case Nil                                                                    => throw new RuntimeException(s"mod `$mod' not found, maybe ${Cpan.byMod.keys filter (_.toString.toUpperCase.replaceAll("[:-]","") == mod.toString.toUpperCase.replaceAll("[:-]","")) mkString " "}");
-            case cp::Nil if cp.name.toString equalsIgnoreCase "perl"                    => None
-            case cp::Nil if CpanErrata.namesToIgnore.get(cp.name).exists(_(cp.version)) => //println(s"package ${cp} ignored")
-                                                                                           None
-            case cp::Nil                                                                => CpanErrata.pinnedPackages.find(_.name == cp.name) match {
-                                                                                             case Some(pinnedcp) => Some(pinnedcp)
-                                                                                             case None           => Some(cp)
-                                                                                           }
-            case cpps                                                                   => throw new RuntimeException(s"mod `$mod' provided by many $cpps");
+            case cp::Nil if cp.pname.toString equalsIgnoreCase "perl"                    => None
+            case cp::Nil if CpanErrata.namesToIgnore.get(cp.pname).exists(_(cp.version)) => //println(s"package ${cp} ignored")
+                                                                                            None
+            case cp::Nil                                                                 => CpanErrata.pinnedPackages.find(_.pname == cp.pname) match {
+                                                                                              case Some(pinnedcp) => Some(pinnedcp)
+                                                                                              case None           => Some(cp)
+                                                                                            }
+            case cpps                                                                    => throw new RuntimeException(s"mod `$mod' provided by many $cpps");
           }
       }
 
   private def filterDeps(cp: CpanPackage, deps: Iterable[CpanPackage]) = for (d <- deps if d != cp;
-                                                                                        if !(d.name.toString.equalsIgnoreCase("Module-Build") && cp.isModule);
-                                                                                        if !(CpanErrata.dependenciesToBreak(cp.name) contains d.name))
+                                                                                        if !(d.pname.toString.equalsIgnoreCase("Module-Build") && cp.isModule);
+                                                                                        if !(CpanErrata.dependenciesToBreak(cp.pname) contains d.pname))
                                                                          yield d
 
-  private def buildDeps      (cp: CpanPackage): Set[CpanPackage] = filterDeps(cp, cp.meta.buildMODs   ++ CpanErrata.extraBuildDependencies  (cp.name) flatMap { case (m,v) => modToPackage(m,v) }).toSet
-  private def runtimeDeps    (cp: CpanPackage): Set[CpanPackage] = filterDeps(cp, cp.meta.runtimeMODs ++ CpanErrata.extraRuntimeDependencies(cp.name) flatMap { case (m,v) => modToPackage(m,v) }).toSet
+  private def buildDeps      (cp: CpanPackage): Set[CpanPackage] = filterDeps(cp, cp.meta.buildMODs   ++ CpanErrata.extraBuildDependencies  (cp.pname) flatMap { case (m,v) => modToPackage(m,v) }).toSet
+  private def runtimeDeps    (cp: CpanPackage): Set[CpanPackage] = filterDeps(cp, cp.meta.runtimeMODs ++ CpanErrata.extraRuntimeDependencies(cp.pname) flatMap { case (m,v) => modToPackage(m,v) }).toSet
   private def deepRuntimeDeps(cp: CpanPackage): Set[CpanPackage] = runtimeDeps(cp) flatMap (d => deepRuntimeDeps(d) + d)
 
   private val _allDeps = collection.mutable.HashMap.empty[CpanPackage, Set[CpanPackage]]
   def allDeps(cp: CpanPackage, seen: List[CpanPackage]=Nil): Set[CpanPackage] = _allDeps.getOrElseUpdate(cp, {
     if (seen contains cp) {
-      println(s"circular dependency ${(cp::seen.takeWhile(_ != cp):::cp::Nil).reverse map (_.name) mkString " -> "}")
+      println(s"circular dependency ${(cp::seen.takeWhile(_ != cp):::cp::Nil).reverse map (_.pname) mkString " -> "}")
       Set.empty
     } else {
       runtimeDeps(cp)++buildDeps(cp) flatMap (d => allDeps(d, cp :: seen) + d)
@@ -925,7 +951,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
     val depBlocks: Set[Either[(BuildPerlPackageBlock, CpanPackage), BuildPerlPackageBlock]] =
       allDeps(cp) flatMap { dep =>
-        buildPerlPackageBlocks.filter(_._2.name == dep.name).toList match {
+        buildPerlPackageBlocks.filter(_._2.pname == dep.pname).toList match {
           case Nil        => Right(new BuildPerlPackageBlock(dep)) :: Nil // Try(new BuildPerlPackageBlock(dep)).toOption.map(Right(_))
           case depblocks  => //if (depblocks.length>1) println("depblocks:"::depblocks mkString "\n")
                              depblocks map {case (_, bppb) => Left(bppb->dep)}
@@ -959,7 +985,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
             else
               message ::= s"perlPackages.${bppb.nixpkgsName}: cleanup"
 
-            require(dep.name == newBppb.name, s"${dep.name} => ${newBppb.name}")
+            require(dep.pname == newBppb.pname, s"${dep.pname} => ${newBppb.pname}")
             buildPerlPackageBlocks = buildPerlPackageBlocks - bppb.nixpkgsName + (newBppb.nixpkgsName -> newBppb)
             `perl-packages.nix` = `perl-packages.nix`.replace(bppb.source.trim, newBppb.source.trim)
           }
@@ -968,7 +994,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
       case Right(bppb) => // insert new dep
         buildPerlPackageBlocks += bppb.nixpkgsName -> bppb
         val after = (buildPerlPackageBlocks.until(bppb.nixpkgsName).lastOption getOrElse buildPerlPackageBlocks.last)._2
-        if (CpanErrata.inExternalNixFiles contains bppb.name) {
+        if (CpanErrata.inExternalNixFiles contains bppb.pname) {
           //`perl-packages.nix` = `perl-packages.nix`.replace(after.source.trim, after.source.trim+"\n/*\n  "+bppb.source.trim+"\n*/")
           //message ::= s"perlPackages.${bppb.nixpkgsName}: init at ${bppb.version}"
         } else {
@@ -998,21 +1024,21 @@ case class RemoteWorker(user: String, host: String, system: String, sshopts: Lis
 }
 
 object Cpan2Nix {
-//val builder_X86_64:  Option[RemoteWorker] = None // locally
-  val builder_X86_64:  Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "x86_64-linux",  "-p922" :: Nil,  4))
+  val builder_X86_64:  Option[RemoteWorker] = None // locally
+//val builder_X86_64:  Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "x86_64-linux",  "-p922" :: Nil,  4))
   val builder_I686:    Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "i686-linux",    "-p922" :: Nil,  4))
 //val builder_DARWIN:  Option[RemoteWorker] = Some(RemoteWorker("user",     "172.16.224.2",             "x86_64-darwin",            Nil,  4))
   val builder_AARCH32: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "armv7l-linux",             Nil, 32))
   val builder_AARCH64: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "aarch64-linux",            Nil, 32))
 
   // todo: command-line switches
-  val doCheckout  = true
+  val doCheckout  = !true
   val doInsert    = /*"GeoIP2" :: "MaxMind-DB-Reader-XS" :: "MaxMind-DB-Writer" ::*/ Nil
-  val doUpgrade   = true
-  val doTestBuild: List[Option[RemoteWorker]] =    builder_AARCH64 ::
+  val doUpgrade   = !true
+  val doTestBuild: List[Option[RemoteWorker]] = // builder_AARCH64 ::
                                                 // builder_AARCH32 ::
                                                 // builder_I686    ::
-                                                // builder_X86_64  ::
+                                                   builder_X86_64  ::
                                                    Nil
 
 
@@ -1038,6 +1064,9 @@ object Cpan2Nix {
           require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
 
+          require(Process("git" :: "apply"       ::         "/home/user/m/cpan2nix/pname.patch"                       :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "commit"      :: "-m" :: "buildPerlPackage: fix meta.homepage calculation" :: "-a" :: Nil, cwd = repopath).! == 0)
+
 //        // perl 5.28.1 -> 5.28.2 and manual updates outside perl-packages.nix
 //        require(Process("git" :: "cherry-pick" :: "5cd52c25969d8f6857cb751bd9ca8b98e8a684b0"          :: Nil, cwd = repopath).! == 0)
 //        require(Process("git" :: "cherry-pick" :: "c80f16350b0fee8c476823918ab64a3e62027002"          :: Nil, cwd = repopath).! == 0)
@@ -1054,17 +1083,17 @@ object Cpan2Nix {
 
         val canUpgradeMemo = collection.mutable.Map.empty[NixPackage, Option[CpanPackage]]
         def canUpgrade(np: NixPackage): Option[CpanPackage] = canUpgradeMemo.getOrElseUpdate(np, {
-          CpanErrata.namesToIgnore.get(np.name) match {
+          CpanErrata.namesToIgnore.get(np.pname) match {
             case Some(pred) if pred(np.version) =>
               None
             case _ =>
-              CpanErrata.pinnedPackages find (_.name == np.name) orElse {
+              CpanErrata.pinnedPackages find (_.pname == np.pname) orElse {
                 np.maybeauthor match {
                   case Some(author) =>
-                    Cpan.byAuthorAndName(author->np.name) match {
+                    Cpan.byAuthorAndName(author->np.pname) match {
                       case cpps if cpps.isEmpty                         =>
-                        Cpan.byName(np.name) match {
-                          case cpps if cpps.isEmpty                          => val mod = Mod(np.name.toString.replace("-", "::")) // try to understand as module name
+                        Cpan.byName(np.pname) match {
+                          case cpps if cpps.isEmpty                          => val mod = Mod(np.pname.toString.replace("-", "::")) // try to understand as module name
                                                                                 Cpan.byMod(mod).toList match {
                                                                                   case cp::Nil => System.err.println(f"${np.url}%-90s not found in CPAN; but there is $mod in $cp");
                                                                                                   None // Some(cp)
@@ -1078,20 +1107,20 @@ object Cpan2Nix {
                       case cpps if cpps exists (np.version < _.version) =>
                         Some(cpps.maxBy(_.version))
                       case cpps if cpps exists (np.version == _.version)=>
-                        Cpan.byName(np.name) match {
+                        Cpan.byName(np.pname) match {
                           case cpps if cpps exists (np.version < _.version) => System.err.println(f"${np.url}%-90s other authors have newer versions ${cpps.filter(np.version < _.version).groupBy(_.author.toString).mapValues(_.map(_.version).toList.sorted) mkString ", "}")
                                                                                Some(cpps.maxBy(_.version))
                           case _                                            => Some(cpps.find(_.version == np.version).get)
                         }
                       case cpps if cpps forall (_.version < np.version) =>
-                        Cpan.byName(np.name) match {
+                        Cpan.byName(np.pname) match {
                           case cpps if cpps exists (np.version < _.version) => Some(cpps.maxBy(_.version))
                           case _                                            => System.err.println(f"${np.url}%-90s version not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
                                                                                Some(cpps.maxBy(_.version))
                         }
                     }
                   case None => // author is not specified in nixpkgs
-                    Cpan.byName(np.name) match {
+                    Cpan.byName(np.pname) match {
                       case cpps if cpps.isEmpty                          => throw new RuntimeException(s"${np.url} not found in CPAN")
                       case cpps if cpps exists (np.version <= _.version) => Some(cpps.maxBy(_.version))
                       case cpps if cpps forall (_.version < np.version)  => throw new RuntimeException(s"${np.url} not found in CPAN; there are only ${cpps.map(_.version).toArray.sorted mkString ", "}")
@@ -1105,10 +1134,10 @@ object Cpan2Nix {
         val pullRequester = new PullRequester(repopath, theOldestSupportedPerl)
 
         // compare results of evaluation pkgs.perlPackages (nixPkgs.allPackages) and parsing of perl-packages.nix (pullRequester.buildPerlPackageBlocks)
-        for (np <- nixPkgs.allPackages if !pullRequester.buildPerlPackageBlocks.exists(_._2.name == np.name)) {
+        for (np <- nixPkgs.allPackages if !pullRequester.buildPerlPackageBlocks.exists(_._2.pname == np.pname)) {
           println(s"WARNING: evaluated but not parsed (probably not in perl-packages.nix): $np")
         }
-        for ((_, bppb) <- pullRequester.buildPerlPackageBlocks if !nixPkgs.allPackages.exists(_.name == bppb.name)) {
+        for ((_, bppb) <- pullRequester.buildPerlPackageBlocks if !nixPkgs.allPackages.exists(_.pname == bppb.pname)) {
           println(s"WARNING: parsed but not evaluated (probably not from CPAN): perlPackages.${bppb.nixpkgsName}")
         }
 
@@ -1125,12 +1154,12 @@ object Cpan2Nix {
         }
 
         if (doUpgrade) {
-          val toupdate = nixPkgs.allPackages sortBy { case np if np.name.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
-                                                      case np if np.name.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
-                                                      case np                                                => canUpgrade(np) match {
-                                                                                                                  case Some(cp) => (10, pullRequester.allDeps(cp).size)  // then smaller first
-                                                                                                                  case None     => (20, 0)
-                                                                                                                }
+          val toupdate = nixPkgs.allPackages sortBy { case np if np.pname.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
+                                                      case np if np.pname.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
+                                                      case np                                                 => canUpgrade(np) match {
+                                                                                                                   case Some(cp) => (10, pullRequester.allDeps(cp).size)  // then smaller first
+                                                                                                                   case None     => (20, 0)
+                                                                                                                 }
                                                     }
 /*
           val toupdate = nixPkgs.allPackages filter (_.name == Name("Catalyst-Runtime"))
@@ -1146,12 +1175,15 @@ object Cpan2Nix {
                     cwd = repopath).!
           }
 
-//        if (doCheckout) {
+          if (doCheckout) {
+            require(Process("git" :: "apply"       ::         "/home/user/m/cpan2nix/postbot.patch"    :: Nil, cwd = repopath).! == 0)
+            require(Process("git" :: "commit"      :: "-m" :: "perlPackage: cleanup after bot" :: "-a" :: Nil, cwd = repopath).! == 0)
+
 //          // set minimum version to 5.28.2
 //          require(Process("git" :: "cherry-pick"  :: "8d0e5bebaf8e3ce739624b26897ba88ac94e9db7"          :: Nil, cwd = repopath).! == 0)
 //          // perl-meta-priority++
 //          require(Process("git" :: "cherry-pick"  :: "0fad0b4e5b94a911a4a30b8ee3ca5a5c6d2258c2"          :: Nil, cwd = repopath).! == 0)
-//        }
+          }
 //        require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
         }
 
@@ -1250,6 +1282,7 @@ object Cpan2Nix {
                                                      :: "--sandbox"
                                                      :: "--option"  :: "binary-caches" :: /* http://$worker:44444/ */ s"http://cache.nixos.org/"
                                                      :: "--keep-failed"
+                                                  // :: "--keep-going"
                                                      :: slice).! == 0)
                                      }
                                    }

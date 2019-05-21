@@ -1,0 +1,38 @@
+From eb4514dc5a33c4b588d643333e30cda192ccd22e Mon Sep 17 00:00:00 2001
+From: volth <volth@volth.com>
+Date: Mon, 20 May 2019 09:11:14 +0000
+Subject: [PATCH] buildPerlPackage: fix meta.homepage calculation
+
+---
+ pkgs/development/perl-modules/generic/default.nix | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/pkgs/development/perl-modules/generic/default.nix b/pkgs/development/perl-modules/generic/default.nix
+index d32755db9907..ad7f3851473c 100644
+--- a/pkgs/development/perl-modules/generic/default.nix
++++ b/pkgs/development/perl-modules/generic/default.nix
+@@ -1,6 +1,6 @@
+ { lib, stdenv, perl, buildPerl, toPerlModule }:
+ 
+-{ nativeBuildInputs ? [], name, ... } @ attrs:
++{ nativeBuildInputs ? [], ... } @ attrs:
+ 
+ toPerlModule(stdenv.mkDerivation (
+   (
+@@ -27,14 +27,14 @@ toPerlModule(stdenv.mkDerivation (
+     # https://metacpan.org/pod/release/XSAWYERX/perl-5.26.0/pod/perldelta.pod#Removal-of-the-current-directory-%28%22.%22%29-from-@INC
+     PERL_USE_UNSAFE_INC = "1";
+ 
+-    meta.homepage = "https://metacpan.org/release/${(builtins.parseDrvName name).name}";
++    meta.homepage = "https://metacpan.org/release/${attrs.pname or (builtins.parseDrvName attrs.name).name}"; # TODO: phase-out `attrs.name`
+     meta.platforms = perl.meta.platforms;
+   }
+   attrs
+   )
+   //
+   {
+-    name = "perl${perl.version}-${name}";
++    name = "perl${perl.version}-${attrs.name or "${attrs.pname}-${attrs.version}"}"; # TODO: phase-out `attrs.name`
+     builder = ./builder.sh;
+     nativeBuildInputs = nativeBuildInputs ++ [ (perl.dev or perl) ];
+     fullperl = buildPerl;

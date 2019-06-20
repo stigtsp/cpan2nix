@@ -1032,9 +1032,9 @@ object Cpan2Nix {
   val builder_AARCH64: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "aarch64-linux",            Nil, 32))
 
   // todo: command-line switches
-  val doCheckout  = !true
+  val doCheckout  = true
   val doInsert    = /*"GeoIP2" :: "MaxMind-DB-Reader-XS" :: "MaxMind-DB-Writer" ::*/ Nil
-  val doUpgrade   = !true
+  val doUpgrade   = true
   val doTestBuild: List[Option[RemoteWorker]] = // builder_AARCH64 ::
                                                 // builder_AARCH32 ::
                                                 // builder_I686    ::
@@ -1175,15 +1175,6 @@ object Cpan2Nix {
                     cwd = repopath).!
           }
 
-          if (doCheckout) {
-            require(Process("git" :: "apply"       ::         "/home/user/m/cpan2nix/postbot.patch"    :: Nil, cwd = repopath).! == 0)
-            require(Process("git" :: "commit"      :: "-m" :: "perlPackage: cleanup after bot" :: "-a" :: Nil, cwd = repopath).! == 0)
-
-//          // set minimum version to 5.28.2
-//          require(Process("git" :: "cherry-pick"  :: "8d0e5bebaf8e3ce739624b26897ba88ac94e9db7"          :: Nil, cwd = repopath).! == 0)
-//          // perl-meta-priority++
-//          require(Process("git" :: "cherry-pick"  :: "0fad0b4e5b94a911a4a30b8ee3ca5a5c6d2258c2"          :: Nil, cwd = repopath).! == 0)
-          }
 //        require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
         }
 

@@ -2,9 +2,11 @@
 use File::Basename qw(dirname basename);
 require("$ENV{HOME}/m/launcher/Launcher.pl.scala");
 
-run(CLASS => 'Cpan2Nix',
-    SCALA => [ '2.12', '-Ywarn-unused-import' ],
-    TEE   => "cpan2nix.txt");
+exit(run( CLASS     => 'Cpan2Nix'
+        , NOSERVER  => 1
+        , SCALA     => [ '2.12', '-Ywarn-unused-import' ]
+        , TEE       => "cpan2nix.txt"
+    ));
 =cut
 !#
 
@@ -21,7 +23,7 @@ import scala.collection.JavaConverters._
 
 import scala.concurrent.duration._
 import scala.concurrent.Await
-import `io.monix::monix:3.0.0-RC1`
+import `io.monix::monix:3.0.0-RC3`
 import monix.eval.Task
 import monix.execution.Scheduler
 
@@ -372,6 +374,7 @@ object CpanErrata {
                                                                                       , Name("MooseX-Role-Parameterized"))  // circular dependency
                                     , Name("Tie-Hash-Indexed"                 ) -> Set( Name("Test"))                       // wrong test framework?
                                     , Name("libapreq2"                        ) -> Set( Name("mod_perl"))                   // https://github.com/NixOS/nixpkgs/pull/59861
+                                    , Name("Apache-Test"                      ) -> Set( Name("Win32-Process"))              // no Win32
                                     ) withDefaultValue Set.empty
 
 
@@ -547,6 +550,7 @@ object CpanErrata {
                                     , CpanPackage fromPath "S/SH/SHLOMIF/XML-LibXML-2.0134.tar.gz"                   // newer version uses Alien-Libxml2 which is unable to find libxml/parser.h
                                     , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
                                     , CpanPackage fromPath "T/TI/TINITA/Inline-0.83.tar.gz"                          // prevent downgrade to 0.82
+                                    , CpanPackage fromPath "N/NI/NICS/Catmandu-1.2002.tar.gz"
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -667,31 +671,19 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
   // a typical code block in `perl-packages.nix`
   case class BuildPerlPackageBlock(source: String) {
     val nixpkgsName:                        String   =                   """(?s)^ {1,2}(\S+)"""                .r.findFirstMatchIn(source).get.group(1)
-    val pnameString:                 Option[String]  =                   """(?s)pname\s*=\s*"([^"]+)";"""      .r.findFirstMatchIn(source).map(_ group 1)
-    val versionString:               Option[String]  =                   """(?s)version\s*=\s*"([^"]+)";"""    .r.findFirstMatchIn(source).map(_ group 1)
-    val pnameAndVersion:             Option[String]  =                   """(?s) name\s*=\s*"([^"]+)";"""     .r.findFirstMatchIn(source).map(_ group 1)
+    val pnameString:                        String   =                   """(?s)pname\s*=\s*"([^"]+)";"""      .r.findFirstMatchIn(source).get.group(1)
+    val versionString:                      String   =                   """(?s)version\s*=\s*"([^"]+)";"""    .r.findFirstMatchIn(source).get.group(1)
+//  val pnameAndVersion:             Option[String]  =                   """(?s) name\s*=\s*"([^"]+)";"""      .r.findFirstMatchIn(source).map(_ group 1)
     val url:                                String   = /*Try { */        """(?s)url\s*=\s*"?([^";]+)"?;"""     .r.findFirstMatchIn(source).get.group(1) /*} getOrElse {  println(source); ??? }*/
     val sha256:                             SHA256   = SHA256 fromString """(?s)sha256\s*=\s*"([a-z0-9]+)";""" .r.findFirstMatchIn(source).get.group(1)
-    val resolvedPnameAndVersion:            String   = (pnameString, versionString, pnameAndVersion) match {
-                                                          case (          _, None         , Some(name)) => name
-                                                          case (          _, Some(version), Some(name)) => name.replace("${version}", version)
-                                                          case (Some(pname), Some(version), None      ) => s"$pname-$version"
-                                                       }
-    val resolvedUrl:                        String   = (pnameString, versionString, pnameAndVersion) match {
-                                                          case (          _, Some(version), Some(name)) => url.replace("${name}", name).replace("${version}", version)
-                                                          case (          _, _            , Some(name)) => url.replace("${name}", name)
-                                                          case (          _, Some(version), _         ) => url                         .replace("${version}", version)
-                                                          case _                                        => url
-                                                       }
+    val resolvedPnameAndVersion:            String   = s"$pnameString-$versionString"
+    val resolvedUrl:                        String   = url.replace("${version}", versionString)
     val propagatedBuildInputs: Option[Array[String]] = """(?s)propagatedBuildInputs\s*=\s*\[([^]]*)\]"""       .r.findFirstMatchIn(source).map(m => """\([^)]+\)|\S+""".r.findAllIn(m.group(1)).toArray)
     val buildInputs:           Option[Array[String]] = """(?s)buildInputs\s*=\s*\[([^]]*)\]"""                 .r.findFirstMatchIn(source).map(m => """\([^)]+\)|\S+""".r.findAllIn(m.group(1)).toArray)
     val licenses:              Option[Array[String]] = """(?s)license\s*=\s*(with[^;]+;\s*)\[([^]]*)\]"""      .r.findFirstMatchIn(source).map(_ group 1 split "\\s+")
     val doCheck:                     Option[String]  =                   """(?s)doCheck\s*=\s*([^;]+);"""      .r.findFirstMatchIn(source).map(_ group 1)
 
-    val (pname, version) = (pnameString, versionString) match {
-                             case (Some(pname), Some(version)) => (Name(pname), Version(version))
-                             case _                            => CpanErrata.parseNameVersion(resolvedPnameAndVersion)
-                           }
+    val (pname, version) = (Name(pnameString), Version(versionString))
 
     def copy( builder:               String
             , pnameString:           String
@@ -705,16 +697,9 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
             , licenses:              Traversable[License]
             ): BuildPerlPackageBlock = {
       var s = source
-      s = """\bbuildPerl(Package|Module)\b"""   .r.replaceAllIn(s, builder)
-
-
-      (this.pnameString, this.versionString, this.pnameAndVersion) match {
-        case (None,    None,    Some(_)) => s = """(?s)( +)name\s*=\s*"[^"]+";"""    .r.replaceAllIn(s, s"$$1pname = \042${pnameString}\042;\n" + s"$$1version = \042${versionString}\042;")
-        case (None,    Some(_), Some(_)) => s = """(?s)name\s*=\s*"[^"]+";"""        .r.replaceAllIn(s, s"pname = \042${pnameString}\042;")
-                                            s = """(?s)version\s*=\s*"[^"]+";"""     .r.replaceAllIn(s, s"version = \042${versionString}\042;")
-        case (Some(_), Some(_), None   ) => s = """(?s)pname\s*=\s*"[^"]+";"""       .r.replaceAllIn(s, s"pname = \042${pnameString}\042;")
-                                            s = """(?s)version\s*=\s*"[^"]+";"""     .r.replaceAllIn(s, s"version = \042${versionString}\042;")
-      }
+      s = """\bbuildPerl(Package|Module)\b"""  .r.replaceAllIn(s, builder)
+      s = """(?s)pname\s*=\s*"[^"]+";"""       .r.replaceAllIn(s, s"pname = \042${pnameString}\042;")
+      s = """(?s)version\s*=\s*"[^"]+";"""     .r.replaceAllIn(s, s"version = \042${versionString}\042;")
 
 //    if (nameAndVersion != new BuildPerlPackageBlock(s).resolvedNameAndVersion)
 //      s = """(?s)name\s*=\s*"[^"]+";"""         .r.replaceAllIn(s, s"name = \042${nameAndVersion}\042;")
@@ -818,8 +803,12 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
   var `perl-packages.nix` = scala.io.Source.fromFile(new File(repopath, "/pkgs/top-level/perl-packages.nix")).mkString
   var buildPerlPackageBlocks = collection.immutable.TreeMap.empty[String, BuildPerlPackageBlock]
-  for (source <- """(?s) {1,2}\S+\s*=\s*(let .+? in\s*)?buildPerl(Package|Module) (rec )?\{.+?\n {1,3}\};\n""".r.findAllIn(`perl-packages.nix`);
-       bppb <- Try(new BuildPerlPackageBlock(source)) /*match { case Success(b) => Success(b); case Failure(e) => println(source); e.printStackTrace(); Failure(e) }*/ ) {
+  for (source <- """(?s) {1,2}\S+\s*=\s*(let\b.+?\bin\s*)?buildPerl(Package|Module) (rec )?\{.+?\n {1,3}\};\n""".r.findAllIn(`perl-packages.nix`);
+       bppb <- Try(new BuildPerlPackageBlock(source)) match { case Success(b) => Success(b)
+                                                              case Failure(e) => //println(source); e.printStackTrace();
+                                                                                 Failure(e)
+                                                            }
+      ) {
     buildPerlPackageBlocks += bppb.nixpkgsName -> bppb
   }
 
@@ -1033,12 +1022,12 @@ object Cpan2Nix {
 
   // todo: command-line switches
   val doCheckout  = true
-  val doInsert    = /*"GeoIP2" :: "MaxMind-DB-Reader-XS" :: "MaxMind-DB-Writer" ::*/ Nil
+  val doInsert    = /* "Device-SerialPort" :: "App-ClusterSSH" :: */ Nil
   val doUpgrade   = true
   val doTestBuild: List[Option[RemoteWorker]] = // builder_AARCH64 ::
                                                 // builder_AARCH32 ::
                                                 // builder_I686    ::
-                                                   builder_X86_64  ::
+                                                // builder_X86_64  ::
                                                    Nil
 
 
@@ -1058,23 +1047,15 @@ object Cpan2Nix {
           }
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
-          require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                    :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                      :: Nil, cwd = repopath).! == 0)
 //        val branchName = "perl-geoip2"
-//        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                     :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                        :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "checkout"    ::         branchName                                  :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                       :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                          :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "checkout"    ::         branchName                                    :: Nil, cwd = repopath).! == 0)
 
-          require(Process("git" :: "apply"       ::         "/home/user/m/cpan2nix/pname.patch"                       :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "commit"      :: "-m" :: "buildPerlPackage: fix meta.homepage calculation" :: "-a" :: Nil, cwd = repopath).! == 0)
-
-//        // perl 5.28.1 -> 5.28.2 and manual updates outside perl-packages.nix
-//        require(Process("git" :: "cherry-pick" :: "5cd52c25969d8f6857cb751bd9ca8b98e8a684b0"          :: Nil, cwd = repopath).! == 0)
-//        require(Process("git" :: "cherry-pick" :: "c80f16350b0fee8c476823918ab64a3e62027002"          :: Nil, cwd = repopath).! == 0)
-//        require(Process("git" :: "cherry-pick" :: "dbde36d7e8e579c1cbcc56b7424eeae97f74cc13"          :: Nil, cwd = repopath).! == 0)
-//        require(Process("git" :: "cherry-pick" :: "979459cff9e3053a165a4ffe593cfb5252478705"          :: Nil, cwd = repopath).! == 0)
-//        require(Process("git" :: "cherry-pick" :: "0f0c0e7d0f31d2204287b4706110d8fde7ff586f"          :: Nil, cwd = repopath).! == 0)
-//        require(Process("git" :: "cherry-pick" :: "a786330302d7cf000bd5c6e33b10d6cfa8c19c2d"          :: Nil, cwd = repopath).! == 0)
-//        require(Process("git" :: "cherry-pick" :: "d285656486911f7f29624eea22e3bb2c77d05fc7"          :: Nil, cwd = repopath).! == 0)
+//          require(Process("git" :: "cherry-pick" ::         "553a10d1e9df8e1ac19a563366ec8e0d0a0865f6"           :: Nil, cwd = repopath).! == 0)
+//          require(Process("git" :: "apply"       ::         "/home/user/m/cpan2nix/vidir.patch"           :: Nil, cwd = repopath).! == 0)
+//          require(Process("git" :: "commit"      :: "-m" :: "perlPackages.vidir: 0.040 -> 0.042" :: "-a"  :: Nil, cwd = repopath).! == 0)
         }
 
         val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
@@ -1184,7 +1165,7 @@ object Cpan2Nix {
           val nixcode = s"""|let
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true;                                                                                              };
+                            |  pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: {                                                           }) ]; };
                             |# pkgs530 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl530; perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
@@ -1216,10 +1197,10 @@ object Cpan2Nix {
                             |                               ))
                             |   ]
                             |   ++
-                            |   (lib.concatMap (pkgs: [ (pkgs.pkgsCross.armv7l-hf-multiplatform.perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |                           (pkgs.pkgsCross.aarch64-multiplatform  .perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |                           (pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |                           #pkgs.pkgsCross.armv7l-hf-multiplatform.perl.pkgs.ModuleBuild
+                            |   (lib.concatMap (pkgs: [ #(pkgs.pkgsCross.armv7l-hf-multiplatform.perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |                           #(pkgs.pkgsCross.aarch64-multiplatform  .perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |                           #(pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |                           ##pkgs.pkgsCross.armv7l-hf-multiplatform.perl.pkgs.ModuleBuild
                             |                         ])
                             |                  [ pkgs528 ])
                             |""".stripMargin
@@ -1244,7 +1225,7 @@ object Cpan2Nix {
                                                       "NIX_SSHOPTS" -> sshopts.mkString(" ")).! == 0));
 
                            // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
-                           _ <- Task.wander(drvs.sliding(1000,1000)) { slice =>
+                           _ <- Task.wander(drvs.grouped(1000).toList) { slice =>
                                   Task {
                                     val cmd = ("ssh" :: "-tt" // allocate remote tty so local Ctrl-C would kill the remote build
                                                      :: sshopts ::: s"$user@$host" :: "--"
@@ -1267,7 +1248,7 @@ object Cpan2Nix {
                     case None =>
                       for (drvs <- instantiateDrvs;
                            // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
-                           _    <- Task.traverse(drvs.sliding(1000,1000)) { slice =>
+                           _    <- Task.traverse(drvs.grouped(1000).toList) { slice =>
                                      Task {
                                        require(Process( "nix-store" :: "--realise" /*:: "--ignore-unknown"*/
                                                      :: "--sandbox"

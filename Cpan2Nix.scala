@@ -1166,44 +1166,45 @@ object Cpan2Nix {
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
                             |  pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: {                                                           }) ]; };
-                            |# pkgs530 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl530; perlPackages = self.perl530Packages; }) ]; };
+                            |  pkgs530 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl530; perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs528) lib;
                             |in
-                            |   (lib.concatMap (pkgs: [ pkgs.nix-serve pkgs.hydra ])
-                            |                  [ pkgs528 ])
-                            |   ++
+                            |   lib.concatMap (pkgs: [
+                            |     pkgs.nix-serve
+                            |     pkgs.hydra
+                            |     (pkgs.perl.withPackages(p: lib.filter
+                            |                                  (x: (x != null) && (lib.isDerivation x) && x.meta.available)
+                            |                                  [
+                            |                                    p.BerkeleyDB
+                            |                                    p.CompressRawZlib
+                            |                                    p.DBDSQLite
+                            |                                    p.DBDmysql
+                            |                                    p.DBDPg
+                            |                                    p.DBDsybase
+                            |                                    p.DBFile
+                            |                                    p.maatkit
+                            |                                    p.MNI-Perllib
+                            |                                    ${ pullRequester.buildPerlPackageBlocks flatMap {
+                                                                      case ( "RegexpCopy"                  // 2003
+                                                                           | "libfile-stripnondeterminism" // need manual upgrade
+                                                                           | "strip-nondeterminism"
+                                                                           , _)       => Nil
+                                                                      case (name, bp) => List("p." + bp.nixpkgsName)
+                                                                    } mkString " "
+                                                                 }
+                            |                                  ]
+                            |                            ))
+                            |    #(pkgs.pkgsCross.armv7l-hf-multiplatform.perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |    #(pkgs.pkgsCross.aarch64-multiplatform  .perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |    #(pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |    ##pkgs.pkgsCross.armv7l-hf-multiplatform.perl.pkgs.ModuleBuild
+                            |   ])
                             |   [
-                            |     (pkgs528.perl.withPackages(p: lib.filter
-                            |                                     (x: (x != null) && (lib.isDerivation x) && x.meta.available)
-                            |                                     [
-                            |                                       p.BerkeleyDB
-                            |                                       p.CompressRawZlib
-                            |                                       p.DBDSQLite
-                            |                                       p.DBDmysql
-                            |                                       p.DBDPg
-                            |                                       p.DBDsybase
-                            |                                       p.DBFile
-                            |                                       p.maatkit
-                            |                                       p.MNI-Perllib
-                            |                                       ${ pullRequester.buildPerlPackageBlocks flatMap {
-                                                                         case ( "RegexpCopy"                  // 2003
-                                                                              | "libfile-stripnondeterminism" // need manual upgrade
-                                                                              | "strip-nondeterminism"
-                                                                              , _)       => Nil
-                                                                         case (name, bp) => List("p." + bp.nixpkgsName)
-                                                                       } mkString " "
-                                                                    }
-                            |                                     ]
-                            |                               ))
+                            |     pkgs528
+                            |   # pkgs530
                             |   ]
-                            |   ++
-                            |   (lib.concatMap (pkgs: [ #(pkgs.pkgsCross.armv7l-hf-multiplatform.perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |                           #(pkgs.pkgsCross.aarch64-multiplatform  .perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |                           #(pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |                           ##pkgs.pkgsCross.armv7l-hf-multiplatform.perl.pkgs.ModuleBuild
-                            |                         ])
-                            |                  [ pkgs528 ])
                             |""".stripMargin
+
           println(nixcode)
 
           val instantiateDrvs = Task[List[String]](

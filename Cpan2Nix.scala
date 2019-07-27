@@ -109,7 +109,7 @@ object License {
        | "gpl2"         | "gnu.org/licenses/old-licenses/gpl-2.0"        => Set(new License("gpl2Plus"))
     case "lgpl_2_1"     | "gnu.org/licenses/lgpl-2.1"
        | "lgpl"         | "gnu.org/licenses/old-licenses/lgpl-2.1"       => Set(new License("lgpl21Plus"))
-    case "lgpl_3_0"                                                      => Set(new License("lgpl3Plus"))
+    case "lgpl_3_0"     | "opensource.org/licenses/lgpl-3.0"             => Set(new License("lgpl3Plus"))
     case "gpl_3"        | "gnu.org/licenses/gpl-3.0"                     => Set(new License("gpl3Plus"))
     case "mozilla"      | "opensource.org/licenses/mozilla1.1"           => Set(new License("mpl11"))
     case "apache_2_0"                                                    => Set(new License("asl20"))

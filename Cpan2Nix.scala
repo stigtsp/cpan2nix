@@ -5,7 +5,7 @@ require("$ENV{HOME}/m/launcher/Launcher.pl.scala");
 exit(run( CLASS     => 'Cpan2Nix'
         , NOSERVER  => 1
         , SCALA     => [ '2.12', '-Ywarn-unused-import' ]
-        , TEE       => "cpan2nix.txt"
+        , TEE       => "cpan2nix.log"
     ));
 =cut
 !#
@@ -23,7 +23,7 @@ import scala.collection.JavaConverters._
 
 import scala.concurrent.duration._
 import scala.concurrent.Await
-import `io.monix::monix:3.0.0-RC3`
+import `io.monix::monix:3.0.0`
 import monix.eval.Task
 import monix.execution.Scheduler
 

@@ -536,6 +536,11 @@ object CpanErrata {
                                                                                       , Mod("Package::Constants")           -> Version("0")
                                                                                       , Mod("Term::UI")                     -> Version("0") // https://github.com/NixOS/nixpkgs/pull/41394#issuecomment-394279386
                                                                                       )
+                                    , Name("JSON-Validator"                   ) -> Map( Mod("Data::Validate::Domain")       -> Version("0") // https://github.com/NixOS/nixpkgs/pull/70335#issuecomment-538054983
+                                                                                      , Mod("Data::Validate::IP")           -> Version("0")
+                                                                                      , Mod("Net::IDN::Encode")             -> Version("0")
+                                                                                      , Mod("YAML::XS")                     -> Version("0")
+                                                                                      )
                                     ) withDefaultValue Map.empty
 
   // *** pinned packages
@@ -1022,7 +1027,7 @@ object Cpan2Nix {
 
   // todo: command-line switches
   val doCheckout  = true
-  val doInsert    = /* "Device-SerialPort" :: "App-ClusterSSH" :: */ Nil
+  val doInsert    = /* "JSON-Validator" :: */ Nil
   val doUpgrade   = true
   val doTestBuild: List[Option[RemoteWorker]] = // builder_AARCH64 ::
                                                 // builder_AARCH32 ::

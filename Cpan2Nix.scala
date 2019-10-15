@@ -558,6 +558,7 @@ object CpanErrata {
                                     , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
                                     , CpanPackage fromPath "T/TI/TINITA/Inline-0.83.tar.gz"                          // prevent downgrade to 0.82
                                     , CpanPackage fromPath "N/NI/NICS/Catmandu-1.2002.tar.gz"
+                                    , CpanPackage fromPath "D/DB/DBOOK/Mojo-SQLite-3.002.tar.gz"                     // https://github.com/NixOS/nixpkgs/pull/70654
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'

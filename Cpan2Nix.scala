@@ -541,6 +541,8 @@ object CpanErrata {
                                                                                       , Mod("Net::IDN::Encode")             -> Version("0")
                                                                                       , Mod("YAML::XS")                     -> Version("0")
                                                                                       )
+                                    , Name("Crypt-ScryptKDF"                  ) -> Map( Mod("Crypt::OpenSSL::Random")       -> Version("0") // https://github.com/NixOS/nixpkgs/pull/71128
+                                                                                      )
                                     ) withDefaultValue Map.empty
 
   // *** pinned packages

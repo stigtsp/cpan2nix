@@ -97,11 +97,11 @@ class License(s: String) {
   override def toString                = s
 }
 object License {
-  def fromString(s: String): Set[License] = s.stripPrefix("https://").stripPrefix("http://").stripPrefix("www.").stripSuffix(".php").stripSuffix(".html").stripSuffix(".txt") match {
+  def fromString(s: String): Set[License] = s.stripPrefix("https://").stripPrefix("http://").stripPrefix("www.").stripSuffix(".php").stripSuffix(".html").stripSuffix(".txt").toLowerCase match {
     case null
        | "unknown"                                                       => Set.empty
     case "perl_5"       | "dev.perl.org/licenses/"
-       | "perl"         | "opensource.org/licenses/Perl"                 => Set(new License("artistic1"), new License("gpl1Plus"))
+       | "perl"         | "opensource.org/licenses/perl"                 => Set(new License("artistic1"), new License("gpl1Plus"))
     case "open_source"                                                   => Set(new License("free"))
     case "gpl_1"        | "opensource.org/licenses/gpl-license"
        | "gpl"          | "gnu.org/licenses/gpl"                         => Set(new License("gpl1Plus"))
@@ -116,10 +116,11 @@ object License {
     case "artistic_1"   | "opensource.org/licenses/artistic-license"
        | "artistic"                                                      => Set(new License("artistic1"))
     case "artistic_2"   | "opensource.org/licenses/artistic-license-2.0"
-                        | "opensource.org/licenses/Artistic-2.0"
+                        | "opensource.org/licenses/artistic-2.0"
+                        | "perlfoundation.org/artistic-license-20"
                         | "perlfoundation.org/artistic_license_2_0"      => Set(new License("artistic2"))
     case "mit"          | "opensource.org/licenses/mit-license"          => Set(new License("mit"))
-    case                  "wiki.creativecommons.org/wiki/Public_domain"  => Set(new License("cc0"))
+    case                  "wiki.creativecommons.org/wiki/public_domain"  => Set(new License("cc0"))
     case "unrestricted"                                                  => Set(new License("wtfpl"))
     case "bsd"          | "opensource.org/licenses/bsd-license"          => Set(new License("bsd3"))
     case x                                                               => println(s"unknown license `$x'"); sys.exit(1)
@@ -311,7 +312,7 @@ object CpanPackage {
 
 object CpanErrata {
   // *** difficult parse cases?
-  private[this] val exception1  = "(PerlMagick|triceps)-([0-9.]+-[0-9.]+)".r
+  private[this] val exception1  = "(PerlMagick|triceps|WWW-Authenticate|Amazon-API|Amazon-Credentials|App-DDFlare|UnixODBC|Tk-Browser|Convert-Ethiopic|CPAN-WAIT|Daemonise|downsexta|DMAMisc|Document|Zobel|Fault|FileHash|Games-CroqueMonster|Geo-Coder-Many|LEGO-NXT|Math-GoldenBigMath|Math-MatrixReal-Ext1|MegaDistro|pfacter|Scanner|SOAP-MIME|Thrift)-([0-9.]+-[0-9.]+)".r
   private[this] val suspicious1 = "([^/]+)-[0-9.]+-([0-9.]+)".r
   private[this] val rule1       = "([^/]+)-([^/-]+)".r
   private[this] val badversion1 = "([A-Z][^/_-]*)_([^/-]+)".r // fix for strings like "App-NetdiscoX-Web-Plugin-GraphLinkSwitch_0.1" or "PDF-EasyPDF_0_04"
@@ -323,6 +324,7 @@ object CpanErrata {
   private[this] val nvcache = collection.mutable.Map.empty[String, (Name, Version)] // to avoid flooding same warnings
   def parseNameVersion(s: String): (Name, Version) = nvcache.getOrElseUpdate(s, {
     val (n, v) = s match {
+      case "Class-CompiledC2.21"              => (Name("Class-CompiledC"),                 Version("2.21"))
       case "Spreadsheet-WriteExcel-WebPivot2" => (Name("Spreadsheet-WriteExcel-WebPivot"), Version("2"))
       case "Devel-PPPort-3.48-again"          => (Name("Devel-PPPort"),                    Version("3.48-again"))
       case exception1 (n, v)                  => (Name(n),                                 Version(v))
@@ -375,6 +377,7 @@ object CpanErrata {
                                     , Name("Tie-Hash-Indexed"                 ) -> Set( Name("Test"))                       // wrong test framework?
                                     , Name("libapreq2"                        ) -> Set( Name("mod_perl"))                   // https://github.com/NixOS/nixpkgs/pull/59861
                                     , Name("Apache-Test"                      ) -> Set( Name("Win32-Process"))              // no Win32
+                                    , Name("Device-MAC"                       ) -> Set( Name("Test-Simple"))
                                     ) withDefaultValue Set.empty
 
 
@@ -499,6 +502,11 @@ object CpanErrata {
                                     , Name("Test-WWW-Mechanize-PSGI"                 ) -> Map( Mod("Test::LongString")                 -> Version("0"))
                                     , Name("Twiggy"                                  ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("YAML"                                    ) -> Map( Mod("Test::Base")                       -> Version("0"))
+                                    , Name("Device-MAC"                              ) -> Map( Mod("Test::Exception")                  -> Version("0")
+                                                                                             , Mod("Test::Differences")                -> Version("0")
+                                                                                             , Mod("Test::Warn")                       -> Version("0")
+                                                                                             , Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Device-OUI"                              ) -> Map( Mod("Test::Exception")                  -> Version("0"))
                                     ) withDefaultValue Map.empty
   val extraRuntimeDependencies = Map( Name("Alien-Build"                      ) -> Map( Mod("PkgConfig")                    -> Version("0"))
                                     , Name("Any-Moose"                        ) -> Map( Mod("Mouse")                        -> Version("0")
@@ -529,20 +537,21 @@ object CpanErrata {
                                     , Name("XML-SAX"                          ) -> Map( Mod("XML::SAX::Exception")          -> Version("0"))
                                     , Name("XML-Grove"                        ) -> Map( Mod("Data::Grove")                  -> Version("0"))
                                     , Name("XML-Handler-YAWriter"             ) -> Map( Mod("XML::Parser::PerlSAX")         -> Version("0"))
-                                    , Name("CPANPLUS"                         ) -> Map( Mod("Archive::Extract")             -> Version("0") // https://github.com/NixOS/nixpkgs/pull/41394#issuecomment-394208166
+                                    , Name("CPANPLUS"                         ) -> Map( Mod("Archive::Extract")             -> Version("0")  // https://github.com/NixOS/nixpkgs/pull/41394#issuecomment-394208166
                                                                                       , Mod("Log::Message")                 -> Version("0")
                                                                                       , Mod("Module::Pluggable")            -> Version("0")
                                                                                       , Mod("Object::Accessor")             -> Version("0")
                                                                                       , Mod("Package::Constants")           -> Version("0")
-                                                                                      , Mod("Term::UI")                     -> Version("0") // https://github.com/NixOS/nixpkgs/pull/41394#issuecomment-394279386
-                                                                                      )
+                                                                                      , Mod("Term::UI")                     -> Version("0"))
                                     , Name("JSON-Validator"                   ) -> Map( Mod("Data::Validate::Domain")       -> Version("0") // https://github.com/NixOS/nixpkgs/pull/70335#issuecomment-538054983
                                                                                       , Mod("Data::Validate::IP")           -> Version("0")
                                                                                       , Mod("Net::IDN::Encode")             -> Version("0")
-                                                                                      , Mod("YAML::XS")                     -> Version("0")
-                                                                                      )
-                                    , Name("Crypt-ScryptKDF"                  ) -> Map( Mod("Crypt::OpenSSL::Random")       -> Version("0") // https://github.com/NixOS/nixpkgs/pull/71128
-                                                                                      )
+                                                                                      , Mod("YAML::XS")                     -> Version("0"))
+                                    , Name("Crypt-ScryptKDF"                  ) -> Map( Mod("Crypt::OpenSSL::Random")       -> Version("0")) // https://github.com/NixOS/nixpkgs/pull/71128
+                                    , Name("DBD-Sybase"                       ) -> Map( Mod("DBI")                          -> Version("0"))
+                                    , Name("Device-OUI"                       ) -> Map( Mod("Class::Accessor::Grouped")     -> Version("0")
+                                                                                      , Mod("Sub::Exporter")                -> Version("0")
+                                                                                      , Mod("LWP")                          -> Version("0"))
                                     ) withDefaultValue Map.empty
 
   // *** pinned packages
@@ -559,6 +568,7 @@ object CpanErrata {
                                     , CpanPackage fromPath "T/TI/TINITA/Inline-0.83.tar.gz"                          // prevent downgrade to 0.82
                                     , CpanPackage fromPath "N/NI/NICS/Catmandu-1.2002.tar.gz"
                                     , CpanPackage fromPath "D/DB/DBOOK/Mojo-SQLite-3.002.tar.gz"                     // https://github.com/NixOS/nixpkgs/pull/70654
+                                    , CpanPackage fromPath "P/PJ/PJACKLAM/Math-BigInt-1.999816.tar.gz"               // 1.999817 tests fail
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -1030,12 +1040,12 @@ object Cpan2Nix {
 
   // todo: command-line switches
   val doCheckout  = true
-  val doInsert    = /* "JSON-Validator" :: */ Nil
+  val doInsert    = /*"Net-Amazon-EC2" ::*/ Nil
   val doUpgrade   = true
-  val doTestBuild: List[Option[RemoteWorker]] = // builder_AARCH64 ::
+  val doTestBuild: List[Option[RemoteWorker]] =    builder_AARCH64 ::
                                                 // builder_AARCH32 ::
                                                 // builder_I686    ::
-                                                // builder_X86_64  ::
+                                                   builder_X86_64  ::
                                                    Nil
 
 
@@ -1061,9 +1071,8 @@ object Cpan2Nix {
           require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                          :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout"    ::         branchName                                    :: Nil, cwd = repopath).! == 0)
 
-//          require(Process("git" :: "cherry-pick" ::         "553a10d1e9df8e1ac19a563366ec8e0d0a0865f6"           :: Nil, cwd = repopath).! == 0)
-//          require(Process("git" :: "apply"       ::         "/home/user/m/cpan2nix/vidir.patch"           :: Nil, cwd = repopath).! == 0)
-//          require(Process("git" :: "commit"      :: "-m" :: "perlPackages.vidir: 0.040 -> 0.042" :: "-a"  :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick" ::         "93329003eecdc06cf92377cb68f87664bb8fd0ed"           :: Nil, cwd = repopath).! == 0) // CPAN in and out
+          require(Process("git" :: "cherry-pick" ::         "820b17d5f648f642f2b124d3c4803d963be8cc34"           :: Nil, cwd = repopath).! == 0) // remove postFixup
         }
 
         val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
@@ -1165,6 +1174,7 @@ object Cpan2Nix {
           }
 
 //        require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick" ::         "9ae67dd99ea024ffce6eb0b9aade17f2c89c73cb"           :: Nil, cwd = repopath).! == 0) // post-upgrade fixes
         }
 
 
@@ -1173,9 +1183,9 @@ object Cpan2Nix {
           val nixcode = s"""|let
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
-                            |  pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: {                                                           }) ]; };
+                            |# pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl528; perlPackages = self.perl528Packages; }) ]; };
                             |  pkgs530 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl530; perlPackages = self.perl530Packages; }) ]; };
-                            |  inherit (pkgs528) lib;
+                            |  inherit (pkgs530) lib;
                             |in
                             |   lib.concatMap (pkgs: [
                             |     pkgs.nix-serve
@@ -1208,8 +1218,8 @@ object Cpan2Nix {
                             |    ##pkgs.pkgsCross.armv7l-hf-multiplatform.perl.pkgs.ModuleBuild
                             |   ])
                             |   [
-                            |     pkgs528
-                            |   # pkgs530
+                            |   # pkgs528
+                            |     pkgs530
                             |   ]
                             |""".stripMargin
 

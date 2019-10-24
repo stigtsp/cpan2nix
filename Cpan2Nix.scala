@@ -1066,13 +1066,9 @@ object Cpan2Nix {
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                      :: Nil, cwd = repopath).! == 0)
-//        val branchName = "perl-geoip2"
 //        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                       :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                          :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout"    ::         branchName                                    :: Nil, cwd = repopath).! == 0)
-
-          require(Process("git" :: "cherry-pick" ::         "93329003eecdc06cf92377cb68f87664bb8fd0ed"           :: Nil, cwd = repopath).! == 0) // CPAN in and out
-          require(Process("git" :: "cherry-pick" ::         "820b17d5f648f642f2b124d3c4803d963be8cc34"           :: Nil, cwd = repopath).! == 0) // remove postFixup
         }
 
         val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
@@ -1174,7 +1170,6 @@ object Cpan2Nix {
           }
 
 //        require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick" ::         "9ae67dd99ea024ffce6eb0b9aade17f2c89c73cb"           :: Nil, cwd = repopath).! == 0) // post-upgrade fixes
         }
 
 

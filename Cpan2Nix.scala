@@ -502,6 +502,8 @@ object CpanErrata {
                                     , Name("Test-WWW-Mechanize-PSGI"                 ) -> Map( Mod("Test::LongString")                 -> Version("0"))
                                     , Name("Twiggy"                                  ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("YAML"                                    ) -> Map( Mod("Test::Base")                       -> Version("0"))
+                                    , Name("LWP-UserAgent-DNS-Hosts"                 ) -> Map( Mod("Test::TCP")                        -> Version("0")
+                                                                                             , Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("Device-MAC"                              ) -> Map( Mod("Test::Exception")                  -> Version("0")
                                                                                              , Mod("Test::Differences")                -> Version("0")
                                                                                              , Mod("Test::Warn")                       -> Version("0")
@@ -1188,15 +1190,6 @@ object Cpan2Nix {
                             |     (pkgs.perl.withPackages(p: lib.filter
                             |                                  (x: (x != null) && (lib.isDerivation x) && x.meta.available)
                             |                                  [
-                            |                                    p.BerkeleyDB
-                            |                                    p.CompressRawZlib
-                            |                                    p.DBDSQLite
-                            |                                    p.DBDmysql
-                            |                                    p.DBDPg
-                            |                                    p.DBDsybase
-                            |                                    p.DBFile
-                            |                                    p.maatkit
-                            |                                    p.MNI-Perllib
                             |                                    ${ pullRequester.buildPerlPackageBlocks flatMap {
                                                                       case ( "RegexpCopy"                  // 2003
                                                                            | "libfile-stripnondeterminism" // need manual upgrade

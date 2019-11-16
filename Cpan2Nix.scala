@@ -23,7 +23,7 @@ import scala.collection.JavaConverters._
 
 import scala.concurrent.duration._
 import scala.concurrent.Await
-import `io.monix::monix:3.0.0`
+import `io.monix::monix:3.1.0`
 import monix.eval.Task
 import monix.execution.Scheduler
 

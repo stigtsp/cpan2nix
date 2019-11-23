@@ -501,6 +501,7 @@ object CpanErrata {
                                     , Name("Test-WWW-Mechanize-CGI"                  ) -> Map( Mod("Test::LongString")                 -> Version("0"))
                                     , Name("Test-WWW-Mechanize-PSGI"                 ) -> Map( Mod("Test::LongString")                 -> Version("0"))
                                     , Name("Twiggy"                                  ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("Cache-KyotoTycoon"                       ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("YAML"                                    ) -> Map( Mod("Test::Base")                       -> Version("0"))
                                     , Name("LWP-UserAgent-DNS-Hosts"                 ) -> Map( Mod("Test::TCP")                        -> Version("0")
                                                                                              , Mod("Test::SharedFork")                 -> Version("0"))
@@ -560,9 +561,8 @@ object CpanErrata {
   val pinnedPackages           = Set( CpanPackage fromPath "N/NJ/NJH/MusicBrainz-DiscID-0.03.tar.gz"                 // need to review patchPhase manually
                                     , CpanPackage fromPath "D/DR/DROLSKY/MooseX-AttributeHelpers-0.23.tar.gz"        // nixpkgs has .patch file incompatible with newer versions
                                     , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"                // 2.15 seems broken
-                                    , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11 test failed
+                                    , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11,4.12 test failed
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
-                                    , CpanPackage fromPath "S/SA/SATOH/Test-Time-0.05.tar.gz"                        // 0.06,0.07 test failed
                                     , CpanPackage fromPath "R/RJ/RJBS/Getopt-Long-Descriptive-0.102.tar.gz"          // It broke perlPackages.MouseXGetOpt (https://github.com/NixOS/nixpkgs/issues/45960#issuecomment-418176613)
                                     , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
                                     , CpanPackage fromPath "S/SH/SHLOMIF/XML-LibXML-2.0134.tar.gz"                   // newer version uses Alien-Libxml2 which is unable to find libxml/parser.h
@@ -571,6 +571,11 @@ object CpanErrata {
                                     , CpanPackage fromPath "N/NI/NICS/Catmandu-1.2002.tar.gz"
                                     , CpanPackage fromPath "D/DB/DBOOK/Mojo-SQLite-3.002.tar.gz"                     // https://github.com/NixOS/nixpkgs/pull/70654
                                     , CpanPackage fromPath "P/PJ/PJACKLAM/Math-BigInt-1.999816.tar.gz"               // 1.999817 tests fail
+                                    , CpanPackage fromPath "I/IS/ISAAC/libapreq2-2.13.tar.gz"                        // error parsing derivation (span2nix fixes sha256 of a patch)
+                                    , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
+                                    , CpanPackage fromPath "T/TO/TODDR/XML-Parser-2.44.tar.gz"                       // 2.46 fails to cross-compile
+                                    , CpanPackage fromPath "F/FR/FROGGS/SDL-2.548.tar.gz"                            // fails to parse buildInputs
+                                    , CpanPackage fromPath "P/PJ/PJACKLAM/Math-BigInt-Lite-0.18.tar.gz"              // 0.19 tests faled
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -1067,10 +1072,15 @@ object Cpan2Nix {
           }
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
-          require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/staging"                      :: Nil, cwd = repopath).! == 0)
-//        require(Process("git" :: "checkout"    :: "-f" :: "remotes/origin/master"                       :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "branch"      :: "-f" :: branchName :: "HEAD"                          :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "checkout"    ::         branchName                                    :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/staging"                       :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/master"                        :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "branch"   :: "-f"        :: branchName :: "HEAD"                           :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "checkout" ::                branchName                                     :: Nil, cwd = repopath).! == 0)
+
+          require(Process("git" :: "apply"    ::                "/home/user/m/cpan2nix/5.30.1.patch"           :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "commit"   :: "-m"        :: "perl: 5.30.0 -> 5.30.1"               :: "-a" :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "apply"    :: "--reverse" :: "/home/user/m/cpan2nix/XML-Parser-2.46.patch"  :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "commit"   :: "-m"        :: "perlPackages.XMLParser: 2.46 -> 2.44" :: "-a" :: Nil, cwd = repopath).! == 0)
         }
 
         val nixPkgs = new NixPkgs(repopath.getAbsolutePath)

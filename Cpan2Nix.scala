@@ -113,8 +113,8 @@ object License {
     case "gpl_3"        | "gnu.org/licenses/gpl-3.0"                     => Set(new License("gpl3Plus"))
     case "mozilla"      | "opensource.org/licenses/mozilla1.1"           => Set(new License("mpl11"))
     case "apache_2_0"                                                    => Set(new License("asl20"))
-    case "artistic_1"   | "opensource.org/licenses/artistic-license"
-       | "artistic"                                                      => Set(new License("artistic1"))
+    case "artistic_1"   | "perlfoundation.org/artistic_license_1_0"
+       | "artistic"     | "opensource.org/licenses/artistic-license"     => Set(new License("artistic1"))
     case "artistic_2"   | "opensource.org/licenses/artistic-license-2.0"
                         | "opensource.org/licenses/artistic-2.0"
                         | "perlfoundation.org/artistic-license-20"
@@ -660,20 +660,23 @@ class PerlDerivation(repopath: File, name: String /* = "perl528"*/, val version:
   private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
                                        :: ( Cpan2Nix.builder_X86_64 match {
-                                             case Some(remoteWorker) =>
+                                              case Worker(system, concurrency, Worker.Remote(user, host, sshopts)) =>
                                                 ( "--option" :: "builders-use-substitutes" :: "true"
                                                :: "-j0"
-                                               :: "--builders" :: s"ssh://${remoteWorker.user}@${remoteWorker.host} ${remoteWorker.system} /home/user/.ssh/id_ed25519 ${remoteWorker.concurrency} ${remoteWorker.concurrency} kvm,big-parallel,gccarch-sandybridge,gccarch-skylake"
+                                               :: "--builders" :: s"ssh://${user}@${host} ${system} /home/user/.ssh/id_ed25519 ${concurrency} ${concurrency} kvm,big-parallel,gccarch-sandybridge,gccarch-skylake"
                                                :: Nil
                                                 )
-                                              case None =>
+                                              case Worker(system, concurrency, Worker.Local) =>
                                                 Nil
                                            })
                                       ::: "-E" :: s"(import <nixpkgs> { }).$name" :: Nil,
                                           cwd = repopath,
                                           "NIXPKGS_CONFIG" -> "",
                                           "NIX_PATH"       -> s"nixpkgs=${repopath.getAbsolutePath}",
-                                          "NIX_SSHOPTS"    -> Cpan2Nix.builder_X86_64.fold("")(_.sshopts.mkString(" "))
+                                          "NIX_SSHOPTS"    -> (Cpan2Nix.builder_X86_64 match {
+                                                                case Worker(system, concurrency, Worker.Remote(user, host, sshopts)) => sshopts.mkString(" ")
+                                                                case Worker(system, concurrency, Worker.Local)                       => ""
+                                                              })
                                         ).!!.trim
 
   private[this] val localVersions = collection.mutable.HashMap.empty[Mod, Option[Version]]
@@ -1030,30 +1033,37 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
 
 
+object Worker {
+  sealed trait Location
+  case object Local                                                    extends Location
+  case class Remote(user: String, host: String, sshopts: List[String]) extends Location {
+    require(user matches """[a-z][a-z0-9]*""")
+    require(host matches """[a-z0-9-]+(\.[a-z0-9-]+)*""")
+  }
+}
 
-case class RemoteWorker(user: String, host: String, system: String, sshopts: List[String], concurrency: Int) {
-  require(user matches """[a-z][a-z0-9]*""")
-  require(host matches """[a-z0-9-]+(\.[a-z0-9-]+)*""")
+case class Worker(system: String, concurrency: Int, location: Worker.Location) {
   require(Set("x86_64-linux", "i686-linux", "armv7l-linux", "aarch64-linux", "x86_64-darwin") contains system)
 }
 
 object Cpan2Nix {
-  val builder_X86_64:  Option[RemoteWorker] = None // locally
-//val builder_X86_64:  Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "x86_64-linux",  "-p922" :: Nil,  4))
-  val builder_I686:    Option[RemoteWorker] = Some(RemoteWorker("root",     "htz2.dmz",                 "i686-linux",    "-p922" :: Nil,  4))
-//val builder_DARWIN:  Option[RemoteWorker] = Some(RemoteWorker("user",     "172.16.224.2",             "x86_64-darwin",            Nil,  4))
-  val builder_AARCH32: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "armv7l-linux",             Nil, 32))
-  val builder_AARCH64: Option[RemoteWorker] = Some(RemoteWorker("volth",    "aarch64.nixos.community",  "aarch64-linux",            Nil, 32))
+  val builder_X86_64  = Worker("x86_64-linux",   12, Worker.Local)
+  val builder_I686    = Worker("i686-linux",     12, Worker.Local)
+//val builder_X86_64  = Worker("x86_64-linux",    4, Worker.Remote("root",     "htz2.dmz",                "-p922" :: Nil))
+//val builder_I686    = Worker("i686-linux",      4, Worker.Remote("root",     "htz2.dmz",                "-p922" :: Nil))
+//val builder_DARWIN  = Worker("x86_64-darwin",   4, Worker.Remote("user",     "172.16.224.2",                       Nil))
+  val builder_AARCH32 = Worker("armv7l-linux",  100, Worker.Remote("volth",    "aarch64.nixos.community",            Nil))
+  val builder_AARCH64 = Worker("aarch64-linux", 100, Worker.Remote("volth",    "aarch64.nixos.community",            Nil))
 
   // todo: command-line switches
   val doCheckout  = true
   val doInsert    = /*"Net-Amazon-EC2" ::*/ Nil
   val doUpgrade   = true
-  val doTestBuild: List[Option[RemoteWorker]] =    builder_AARCH64 ::
-                                                // builder_AARCH32 ::
-                                                // builder_I686    ::
-                                                   builder_X86_64  ::
-                                                   Nil
+  val doTestBuild: List[Worker] =    builder_AARCH64 ::
+                                  // builder_AARCH32 ::
+                                  // builder_I686    ::
+                                     builder_X86_64  ::
+                                  Nil
 
 
 
@@ -1076,11 +1086,6 @@ object Cpan2Nix {
 //        require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/master"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"   :: "-f"        :: branchName :: "HEAD"                           :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout" ::                branchName                                     :: Nil, cwd = repopath).! == 0)
-
-          require(Process("git" :: "apply"    ::                "/home/user/m/cpan2nix/5.30.1.patch"           :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "commit"   :: "-m"        :: "perl: 5.30.0 -> 5.30.1"               :: "-a" :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "apply"    :: "--reverse" :: "/home/user/m/cpan2nix/XML-Parser-2.46.patch"  :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "commit"   :: "-m"        :: "perlPackages.XMLParser: 2.46 -> 2.44" :: "-a" :: Nil, cwd = repopath).! == 0)
         }
 
         val nixPkgs = new NixPkgs(repopath.getAbsolutePath)
@@ -1185,18 +1190,18 @@ object Cpan2Nix {
         }
 
 
-        for (builder <- doTestBuild) {
+        for (worker <- doTestBuild) {
           // try to build
           val nixcode = s"""|let
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
-                            |# pkgs528 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl528; perlPackages = self.perl528Packages; }) ]; };
-                            |  pkgs530 = import <nixpkgs> { ${builder.fold("")("system = \"" + _.system + "\";")} config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl530; perlPackages = self.perl530Packages; }) ]; };
+                            |# pkgs528 = import <nixpkgs> { system = "${worker.system}"; config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl528; perlPackages = self.perl528Packages; }) ]; };
+                            |  pkgs530 = import <nixpkgs> { system = "${worker.system}"; config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl530; perlPackages = self.perl530Packages; }) ]; };
                             |  inherit (pkgs530) lib;
                             |in
                             |   lib.concatMap (pkgs: [
                             |     pkgs.nix-serve
-                            |     pkgs.hydra
+                            |     #pkgs.hydra
                             |     (pkgs.perl.withPackages(p: lib.filter
                             |                                  (x: (x != null) && (lib.isDerivation x) && x.meta.available)
                             |                                  [
@@ -1233,8 +1238,8 @@ object Cpan2Nix {
                                          ).!!.split('\n').toList
                                 )
 
-          val t = builder match {
-                    case Some(RemoteWorker(user, host, system, sshopts, concurrency)) =>
+          val t = worker match {
+                    case Worker(system, concurrency, Worker.Remote(user, host, sshopts)) =>
                       for (drvs <-  instantiateDrvs;
 
                            _ <- Task(require(Process("nix-copy-closure" :: "-v" :: "--to" :: s"$user@$host" :: drvs,
@@ -1251,8 +1256,8 @@ object Cpan2Nix {
                                                      :: "--option"  :: "binary-caches" :: "http://cache.nixos.org/"
                                                      :: "--extra-platforms" :: system // forcing build for the system (needed for "armv7l-linux" and "i686-linux")
                                                      :: s"-j${concurrency}"
-                                                     :: "--keep-going"
-                                                     :: slice)
+                                                     :: (if (concurrency == 1) List() else List("--keep-going"))
+                                                    ::: slice)
                                     require(Process(cmd).! == 0)
                                   }.materialize
                                 }
@@ -1262,7 +1267,7 @@ object Cpan2Nix {
                                                       "NIX_SSHOPTS" -> NIX_SSHOPTS.mkString(" ")).! == 0)
                           */
                           ) yield ()
-                    case None =>
+                    case Worker(system, concurrency, Worker.Local) =>
                       for (drvs <- instantiateDrvs;
                            // split `drvs` to avoid too long command line (workaround for https://github.com/NixOS/nix/issues/2256)
                            _    <- Task.traverse(drvs.grouped(1000).toList) { slice =>
@@ -1271,8 +1276,9 @@ object Cpan2Nix {
                                                      :: "--sandbox"
                                                      :: "--option"  :: "binary-caches" :: /* http://$worker:44444/ */ s"http://cache.nixos.org/"
                                                      :: "--keep-failed"
-                                                  // :: "--keep-going"
-                                                     :: slice).! == 0)
+                                                     :: s"-j${concurrency}"
+                                                     :: (if (concurrency == 1) List() else List("--keep-going"))
+                                                    ::: slice).! == 0)
                                      }
                                    }
                           ) yield ()

@@ -1083,6 +1083,7 @@ object Cpan2Nix {
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/staging"                       :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick"             :: "68317c736e29b72387ed05be99492340df4eaf22"     :: Nil, cwd = repopath).! == 0)
 //        require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/master"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"   :: "-f"        :: branchName :: "HEAD"                           :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout" ::                branchName                                     :: Nil, cwd = repopath).! == 0)
@@ -1201,7 +1202,7 @@ object Cpan2Nix {
                             |in
                             |   lib.concatMap (pkgs: [
                             |     pkgs.nix-serve
-                            |     #pkgs.hydra
+                            |   # pkgs.hydra
                             |     (pkgs.perl.withPackages(p: lib.filter
                             |                                  (x: (x != null) && (lib.isDerivation x) && x.meta.available)
                             |                                  [
@@ -1215,10 +1216,11 @@ object Cpan2Nix {
                                                                  }
                             |                                  ]
                             |                            ))
-                            |    #(pkgs.pkgsCross.armv7l-hf-multiplatform.perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |    #(pkgs.pkgsCross.aarch64-multiplatform  .perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |    #(pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |    ##pkgs.pkgsCross.armv7l-hf-multiplatform.perl.pkgs.ModuleBuild
+                            |     (pkgs.pkgsCross.raspberryPi            .perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |     (pkgs.pkgsCross.armv7l-hf-multiplatform.perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |     (pkgs.pkgsCross.aarch64-multiplatform  .perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |     (pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
+                            |    #(pkgs.pkgsCross.armv7l-hf-multiplatform.perl.pkgs.ModuleBuild)
                             |   ])
                             |   [
                             |   # pkgs528

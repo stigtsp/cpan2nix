@@ -1216,11 +1216,12 @@ object Cpan2Nix {
                                                                  }
                             |                                  ]
                             |                            ))
+                            |   ] ++ lib.optionals pkgs.stdenv.is64bit [
                             |     (pkgs.pkgsCross.raspberryPi            .perl.withPackages(p: [p.LWP p.XMLParser]))
                             |     (pkgs.pkgsCross.armv7l-hf-multiplatform.perl.withPackages(p: [p.LWP p.XMLParser]))
                             |     (pkgs.pkgsCross.aarch64-multiplatform  .perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |     (pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
                             |    #(pkgs.pkgsCross.armv7l-hf-multiplatform.perl.pkgs.ModuleBuild)
+                            |     (pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
                             |   ])
                             |   [
                             |   # pkgs528

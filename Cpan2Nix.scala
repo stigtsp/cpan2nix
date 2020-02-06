@@ -559,23 +559,18 @@ object CpanErrata {
 
   // *** pinned packages
   val pinnedPackages           = Set( CpanPackage fromPath "N/NJ/NJH/MusicBrainz-DiscID-0.03.tar.gz"                 // need to review patchPhase manually
-                                    , CpanPackage fromPath "D/DR/DROLSKY/MooseX-AttributeHelpers-0.23.tar.gz"        // nixpkgs has .patch file incompatible with newer versions
                                     , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"                // 2.15 seems broken
                                     , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11,4.12 test failed
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
-                                    , CpanPackage fromPath "R/RJ/RJBS/Getopt-Long-Descriptive-0.102.tar.gz"          // It broke perlPackages.MouseXGetOpt (https://github.com/NixOS/nixpkgs/issues/45960#issuecomment-418176613)
                                     , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
-                                    , CpanPackage fromPath "S/SH/SHLOMIF/XML-LibXML-2.0134.tar.gz"                   // newer version uses Alien-Libxml2 which is unable to find libxml/parser.h
-                                    , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
                                     , CpanPackage fromPath "T/TI/TINITA/Inline-0.83.tar.gz"                          // prevent downgrade to 0.82
-                                    , CpanPackage fromPath "N/NI/NICS/Catmandu-1.2002.tar.gz"
-                                    , CpanPackage fromPath "D/DB/DBOOK/Mojo-SQLite-3.002.tar.gz"                     // https://github.com/NixOS/nixpkgs/pull/70654
                                     , CpanPackage fromPath "P/PJ/PJACKLAM/Math-BigInt-1.999816.tar.gz"               // 1.999817 tests fail
                                     , CpanPackage fromPath "I/IS/ISAAC/libapreq2-2.13.tar.gz"                        // error parsing derivation (span2nix fixes sha256 of a patch)
                                     , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
                                     , CpanPackage fromPath "T/TO/TODDR/XML-Parser-2.44.tar.gz"                       // 2.46 fails to cross-compile
                                     , CpanPackage fromPath "F/FR/FROGGS/SDL-2.548.tar.gz"                            // fails to parse buildInputs
                                     , CpanPackage fromPath "P/PJ/PJACKLAM/Math-BigInt-Lite-0.18.tar.gz"              // 0.19 tests faled
+                                    , CpanPackage fromPath "R/RU/RURBAN/Cpanel-JSON-XS-4.17.tar.gz"                  // 4.18 add many new deps which do fail
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -1083,7 +1078,7 @@ object Cpan2Nix {
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/staging"                       :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick"             :: "68317c736e29b72387ed05be99492340df4eaf22"     :: Nil, cwd = repopath).! == 0)
+        //require(Process("git" :: "cherry-pick"             :: "68317c736e29b72387ed05be99492340df4eaf22"     :: Nil, cwd = repopath).! == 0)
 //        require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/master"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"   :: "-f"        :: branchName :: "HEAD"                           :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout" ::                branchName                                     :: Nil, cwd = repopath).! == 0)
@@ -1197,13 +1192,14 @@ object Cpan2Nix {
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
                             |# pkgs528 = import <nixpkgs> { system = "${worker.system}"; config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl528; perlPackages = self.perl528Packages; }) ]; };
-                            |  pkgs530 = import <nixpkgs> { system = "${worker.system}"; config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl530; perlPackages = self.perl530Packages; }) ]; };
+                            |  pkgs530 = import <nixpkgs> { system = "${worker.system}"; config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true;                                                                                              };
                             |  inherit (pkgs530) lib;
                             |in
-                            |   lib.concatMap (pkgs: [
+                            |   lib.concatMap ({pkgs, dotperl}: [
                             |     pkgs.nix-serve
                             |   # pkgs.hydra
-                            |     (pkgs.perl.withPackages(p: lib.filter
+                            |     (dotperl pkgs).pkgs.MooseXAttributeHelpers
+                            |     ((dotperl pkgs).withPackages(p: lib.filter
                             |                                  (x: (x != null) && (lib.isDerivation x) && x.meta.available)
                             |                                  [
                             |                                    ${ pullRequester.buildPerlPackageBlocks flatMap {
@@ -1217,15 +1213,17 @@ object Cpan2Nix {
                             |                                  ]
                             |                            ))
                             |   ] ++ lib.optionals pkgs.stdenv.is64bit [
-                            |     (pkgs.pkgsCross.raspberryPi            .perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |     (pkgs.pkgsCross.armv7l-hf-multiplatform.perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |     (pkgs.pkgsCross.aarch64-multiplatform  .perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |    #(pkgs.pkgsCross.armv7l-hf-multiplatform.perl.pkgs.ModuleBuild)
-                            |     (pkgs.pkgsMusl                         .perl.withPackages(p: [p.LWP p.XMLParser]))
-                            |   ])
+                            |     ((dotperl pkgs.pkgsCross.raspberryPi            ).withPackages(p: [p.LWP p.XMLParser]))
+                            |     ((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).withPackages(p: [p.LWP p.XMLParser]))
+                            |     ((dotperl pkgs.pkgsCross.aarch64-multiplatform  ).withPackages(p: [p.LWP p.XMLParser]))
+                            |    #((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).pkgs.ModuleBuild)
+                            |     ((dotperl pkgs.pkgsMusl                         ).withPackages(p: [p.LWP p.XMLParser]))
+                            |   ]
+                            |   )
                             |   [
-                            |   # pkgs528
-                            |     pkgs530
+                            |   # {pkgs = pkgs530; dotperl = p: p.perl528;  }
+                            |     {pkgs = pkgs530; dotperl = p: p.perl530;  }
+                            |   # {pkgs = pkgs530; dotperl = p: p.perldevel;}
                             |   ]
                             |""".stripMargin
 

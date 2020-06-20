@@ -503,6 +503,11 @@ object CpanErrata {
                                     , Name("Twiggy"                                  ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("Cache-KyotoTycoon"                       ) -> Map( Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("YAML"                                    ) -> Map( Mod("Test::Base")                       -> Version("0"))
+                                    , Name("Net-IP-Lite"                             ) -> Map( Mod("Test::Exception")                  -> Version("0"))
+                                    , Name("Mojo-Pg"                                 ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Mojo-mysql"                              ) -> Map( Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("Sereal"                                  ) -> Map( Mod("Test::Deep")                       -> Version("0")
+                                                                                             , Mod("Test::MemoryGrowth")               -> Version("0"))
                                     , Name("LWP-UserAgent-DNS-Hosts"                 ) -> Map( Mod("Test::TCP")                        -> Version("0")
                                                                                              , Mod("Test::SharedFork")                 -> Version("0"))
                                     , Name("Device-MAC"                              ) -> Map( Mod("Test::Exception")                  -> Version("0")
@@ -1213,12 +1218,19 @@ object Cpan2Nix {
                             |                                  ]
                             |                            ))
                             |   ] ++ lib.optionals pkgs.stdenv.is64bit [
+                            |""".stripMargin +
+         (worker.system match {
+            case "x86_64-linux" =>
+                        s"""|
                             |     ((dotperl pkgs.pkgsCross.raspberryPi            ).withPackages(p: [p.LWP p.XMLParser]))
                             |     ((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).withPackages(p: [p.LWP p.XMLParser]))
                             |     ((dotperl pkgs.pkgsCross.aarch64-multiplatform  ).withPackages(p: [p.LWP p.XMLParser]))
                             |    #((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).pkgs.ModuleBuild)
                             |     ((dotperl pkgs.pkgsMusl                         ).withPackages(p: [p.LWP p.XMLParser]))
-                            |   ]
+                            |""".stripMargin
+            case _              => ""
+          }) +
+                        s"""|   ]
                             |   )
                             |   [
                             |   # {pkgs = pkgs530; dotperl = p: p.perl528;  }

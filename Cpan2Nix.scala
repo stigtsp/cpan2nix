@@ -1228,6 +1228,11 @@ object Cpan2Nix {
                             |    #((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).pkgs.ModuleBuild)
                             |     ((dotperl pkgs.pkgsMusl                         ).withPackages(p: [p.LWP p.XMLParser]))
                             |""".stripMargin
+            case "aarch64-linux" =>
+                        s"""|
+                            |     ((dotperl pkgs.pkgsCross.raspberryPi            ).withPackages(p: [p.LWP p.XMLParser]))
+                            |     ((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).withPackages(p: [p.LWP p.XMLParser]))
+                            |""".stripMargin
             case _              => ""
           }) +
                         s"""|   ]

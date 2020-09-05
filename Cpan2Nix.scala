@@ -3,7 +3,8 @@ use File::Basename qw(dirname basename);
 require("$ENV{HOME}/m/launcher/Launcher.pl.scala");
 
 exit(run( CLASS     => 'Cpan2Nix'
-        , NOSERVER  => 1
+#       , NOSERVER  => 1
+#       , JAVA      => `nix-build --no-out-link '<nixpkgs-current>' -A oraclejdk14`  # custom JAVA_HOME
         , SCALA     => [ '2.12', '-Ywarn-unused-import' ]
         , TEE       => "cpan2nix.log"
     ));
@@ -14,16 +15,19 @@ exit(run( CLASS     => 'Cpan2Nix'
 
 import `io.circe::circe-parser:0.9.1`
 import `org.yaml:snakeyaml:1.20`
+import `commons-io:2.6`,                           org.apache.commons.io.FileUtils
 
+import ms.webmaster.launcher.position._
 import java.io.File
 import java.nio.file.{Paths, Files}
 import scala.sys.process._
 import scala.util.{Try, Failure, Success}
 import scala.collection.JavaConverters._
+import scala.Console._
 
 import scala.concurrent.duration._
 import scala.concurrent.Await
-import `io.monix::monix:3.1.0`
+import `io.monix::monix:3.2.2`
 import monix.eval.Task
 import monix.execution.Scheduler
 
@@ -109,7 +113,8 @@ object License {
        | "gpl2"         | "gnu.org/licenses/old-licenses/gpl-2.0"        => Set(new License("gpl2Plus"))
     case "lgpl_2_1"     | "gnu.org/licenses/lgpl-2.1"
        | "lgpl"         | "gnu.org/licenses/old-licenses/lgpl-2.1"       => Set(new License("lgpl21Plus"))
-    case "lgpl_3_0"     | "opensource.org/licenses/lgpl-3.0"             => Set(new License("lgpl3Plus"))
+    case "lgpl_3_0"     | "opensource.org/licenses/lgpl-3.0"
+       |                  "opensource.org/licenses/lgpl-license"         => Set(new License("lgpl3Plus"))
     case "gpl_3"        | "gnu.org/licenses/gpl-3.0"                     => Set(new License("gpl3Plus"))
     case "mozilla"      | "opensource.org/licenses/mozilla1.1"           => Set(new License("mpl11"))
     case "apache_2_0"                                                    => Set(new License("asl20"))
@@ -122,8 +127,10 @@ object License {
     case "mit"          | "opensource.org/licenses/mit-license"          => Set(new License("mit"))
     case                  "wiki.creativecommons.org/wiki/public_domain"  => Set(new License("cc0"))
     case "unrestricted"                                                  => Set(new License("wtfpl"))
-    case "bsd"          | "opensource.org/licenses/bsd-license"          => Set(new License("bsd3"))
-    case x                                                               => println(s"unknown license `$x'"); sys.exit(1)
+    case "freebsd"
+       | "bsd"          | "opensource.org/licenses/bsd-license"
+       |                  "opensource.org/licenses/bsd-3-clause"         => Set(new License("bsd3"))
+    case x                                                               => //println(s"unknown license `$x'"); sys.exit(1)
                                                                             Set.empty
   }
 }
@@ -223,11 +230,20 @@ case class CpanPackage private(author: Author, pname: Name, version: Version, pa
 //lazy val readmeFile:  Option[File] = Cpan.downloadFile((NixPackage.extentions+"$").r.replaceAllIn(this.path, ".readme"))
   lazy val sha256:      SHA256       = SHA256 fromString s"nix hash-file --type sha256 --base32 ${tarballFile}".!!.trim
 
-  lazy val filesInTarball: Array[String] = if (tarballFile.getName endsWith ".zip")
-                                             Array.empty // FIXME: like files in .zip
-                                           else
-                                             s"tar --list --warning=no-unknown-keyword --file $tarballFile".!! split '\n'
-  lazy val isModule:       Boolean       = !pname.toString.equalsIgnoreCase("Module-Build") && filesInTarball.contains(s"$pname-$version/Build.PL")
+  lazy val filesInTarball: Array[String]  = tarballFile.getName match {
+                                              case name if name.endsWith(".tar.gz") || name.endsWith(".tar.bz2") || name.endsWith(".tgz")  => s"tar --list --warning=no-unknown-keyword --file $tarballFile".!! split '\n'
+                                              case name if name.endsWith(".pm.gz")                                                         => Array(tarballFile.getName stripSuffix ".gz")
+                                              case name if name.endsWith(".zip")                                                           => //s"bash -c 'T=$$(mktemp -d); mkdir -p $$T; 7z x -o$$T $tarballFile > /dev/null; cd $$T; find -type f'".!!.split('\n').map(_ stripPrefix "./")
+                                                                                                                                              val zis = new java.util.zip.ZipInputStream(new java.io.FileInputStream(tarballFile))
+                                                                                                                                              try {
+                                                                                                                                                Iterator.continually(zis.getNextEntry).takeWhile(_ != null).filterNot(_.isDirectory).map(_.getName).toArray
+                                                                                                                                              } catch {
+                                                                                                                                                case e: java.util.zip.ZipException => println(RED+BOLD+e+RESET); Array()
+                                                                                                                                              } finally {
+                                                                                                                                                zis.close()
+                                                                                                                                              }
+                                            }
+  lazy val isModule:       Boolean        = !pname.toString.equalsIgnoreCase("Module-Build") && filesInTarball.contains(s"$pname-$version/Build.PL")
 
   case class MetaExcerpt(runtimeMODs: Map[Mod, Version],
                          buildMODs:   Map[Mod, Version],
@@ -236,15 +252,34 @@ case class CpanPackage private(author: Author, pname: Name, version: Version, pa
                          homepage:    Option[String])
 
   lazy val meta: MetaExcerpt = {
-    val metaContent = metaFile.fold("")(file => scala.io.Source.fromFile(file).mkString)
-    var runtime     =                                                Map.empty[String,Any]
-    var build       = if (isModule) Map("Module::Build" -> "0") else Map.empty[String,Any]
-    var description = Option.empty[String]
-    var licenses    = Set.empty[License]
-    var homepage    = Option.empty[String]
+    val metaContent:      String              = metaFile.fold("")(file => FileUtils.readFileToString(file, "UTF-8"))
+    val fixedMetaContent: String              = metaFile.fold("")(_.getName) match {
+                                                  case "String-CamelCase-0.03.meta"                                  => metaContent.replace("author:       author:"                                                  , "author:"                                                             )
+                                                  case "OpenFrame-WebApp-0.04.meta"
+                                                     | "Acme-Scurvy-Whoreson-BilgeRat-Backend-insultserver-1.0.meta" => metaContent.replace("\n:\n"                                                                  , ":\n"                                                                 )
+                                                  case "Template-Plugin-KwikiFormat-1.04.meta"                       => metaContent.replace("\nTanimoto"                                                             , " Tanimoto"                                                           )
+                                                  case "Daemon-Whois-1.11.meta"                                      => metaContent.replace("\nunder the following license: Eclipse Public License, Version 1.0\nSee", " under the following license Eclipse Public License, Version 1.0 See")
+                                                  case "ASP4-1.087.meta"                                             => metaContent.replace("Time::HiRes "                                                           , "Time::HiRes:"                                                        )
+                                                  case "Net-Delicious-Export-Post-XBEL-1.4.meta"                     => metaContent.replace(": >= "                                                                  , ": "                                                                  )
+                                                  case "SVK-v2.0.2.meta"                                             => metaContent.replace("version: !!perl/hash:version "                                          , "version:"                                                            )
+                                                  case "WebService-Audioscrobbler-0.08.meta"
+                                                     | "URI-ParseSearchString-3.51.meta"
+                                                     | "Class-Serializer-0.04.meta"
+                                                     | "subs-parallel-0.09.meta"                                     => metaContent.replace("\r\","                                                                  , "\","                                                                 )
+                                                  case "Mail-Postfixadmin-0.20130624.meta"                           => metaContent.replace("\t"                                                                     , "  "                                                                  )
+                                                  case "VMS-Time-0_1.meta"                                           => ""
+                                                  case "Video-FFmpeg-0.47.meta"                                      => metaContent split '\n' map (_.stripPrefix(" ")) mkString "\n"
+                                                  case "DMTF-CIM-WSMan-v0.09.meta"                                   => metaContent split '\n' map (_.stripPrefix("{").stripSuffix("\r").stripSuffix("}").replace("{{", "{").replace("}}", "}")) mkString "\n"
+                                                  case _                                                             => metaContent
+                                                }
+    var runtime:          Map[String, String] =                                                Map.empty
+    var build:            Map[String, String] = if (isModule) Map("Module::Build" -> "0") else Map.empty
+    var description:      Option[String]      = None
+    var licenses:         Set[License]        = Set.empty
+    var homepage:         Option[String]      = None
 
-    if (metaContent startsWith "{") {
-      val Right(json) = io.circe.parser.parse(metaContent)
+    if (fixedMetaContent startsWith "{") {
+      val Right(json) = io.circe.parser.parse(fixedMetaContent)
       for (path   <- List( List("prereqs", "runtime", "requires") );
            m      <- path.foldLeft[io.circe.ACursor](json.hcursor)(_ downField _).as[Map[String,io.circe.Json]];
            (k, v) <- m) {
@@ -264,21 +299,31 @@ case class CpanPackage private(author: Author, pname: Name, version: Version, pa
       licenses    = json.hcursor.downField("resources").downField("license").as[Set[String]].getOrElse(Set.empty).flatMap(License.fromString(_)) ++
                     json.hcursor.downField(                       "license").as[Set[String]].getOrElse(Set.empty).flatMap(License.fromString(_))
       homepage    = json.hcursor.downField("resources").downField("homepage").as[String].toOption
-    } else if (metaContent.nonEmpty) {
-      val fixedmeta = metaContent.replace("author:       author:", "author:") // invalid yaml in "String-CamelCase-0.03.meta"
-      val yaml: java.util.Map[String, Any] = new org.yaml.snakeyaml.Yaml load fixedmeta
+    } else if (fixedMetaContent.nonEmpty) {
+      val yaml: java.util.Map[String, Any] = new org.yaml.snakeyaml.Yaml load fixedMetaContent
       require(yaml != null, s"invalid yaml $path")
 
-      yaml.get("requires"          ).asInstanceOf[java.util.Map[String,Any]] match { case null => ; case m => runtime ++= m.asScala.mapValues{ case null => "" case v => v } }
-      yaml.get("configure_requires").asInstanceOf[java.util.Map[String,Any]] match { case null => ; case m => build   ++= m.asScala.mapValues{ case null => "" case v => v } }
-      yaml.get("build_requires"    ).asInstanceOf[java.util.Map[String,Any]] match { case null => ; case m => build   ++= m.asScala.mapValues{ case null => "" case v => v } }
-      yaml.get("x_test_requires"   ).asInstanceOf[java.util.Map[String,Any]] match { case null => ; case m => build   ++= m.asScala.mapValues{ case null => "" case v => v } }
+      println(__LINE__, runtime.map(_._1.getClass))
+      yaml.get("requires"          ) match { case null                  =>
+                                             case s: String             => println(__LINE__, s"s=[$s]")
+                                                                           runtime ++= s.trim.split("\\s+").sliding(2,2).map{case Array(k,v) => k->v}
+                                             case m: java.util.Map[_,_] => runtime ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString)   } }
+      yaml.get("configure_requires") match { case null                  =>
+                                             case m: java.util.Map[_,_] => build   ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString)   } }
+      yaml.get("build_requires"    ) match { case null                  =>
+                                             case m: java.util.Map[_,_] => build   ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString)   } }
+      yaml.get("x_test_requires"   ) match { case null                  =>
+                                             case m: java.util.Map[_,_] => build   ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString)   } }
 
       description = Option(yaml.get("abstract").asInstanceOf[String])
-      licenses    =  ( Option(yaml.get("license").asInstanceOf[String]).toSet ++
-                       ( for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
-                              b <- Option(a.get("license")))
-                          yield b)
+      licenses    =  ( (yaml.get("license") match {
+                          case null                           => Set()
+                          case s: String                      => Set(s)
+                          case a: java.util.ArrayList[String] => a.asScala.toSet
+                        }) ++
+                       (for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
+                             b <- Option(a.get("license")))
+                         yield b)
                      ) flatMap (_ split ",\\s*") flatMap (License fromString _)
       homepage    = for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
                          b <- Option(a.get("homepage")))
@@ -560,6 +605,7 @@ object CpanErrata {
                                     , Name("Device-OUI"                       ) -> Map( Mod("Class::Accessor::Grouped")     -> Version("0")
                                                                                       , Mod("Sub::Exporter")                -> Version("0")
                                                                                       , Mod("LWP")                          -> Version("0"))
+                                    , Name("Crypt-DES_EDE3"                   ) -> Map( Mod("Crypt::DES")                   -> Version("0")) // .meta file is 404
                                     ) withDefaultValue Map.empty
 
   // *** pinned packages
@@ -570,9 +616,8 @@ object CpanErrata {
                                     , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
                                     , CpanPackage fromPath "T/TI/TINITA/Inline-0.83.tar.gz"                          // prevent downgrade to 0.82
                                     , CpanPackage fromPath "P/PJ/PJACKLAM/Math-BigInt-1.999816.tar.gz"               // 1.999817 tests fail
-                                    , CpanPackage fromPath "I/IS/ISAAC/libapreq2-2.13.tar.gz"                        // error parsing derivation (span2nix fixes sha256 of a patch)
+//                                  , CpanPackage fromPath "I/IS/ISAAC/libapreq2-2.13.tar.gz"                        // error parsing derivation (span2nix fixes sha256 of a patch)
                                     , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
-                                    , CpanPackage fromPath "T/TO/TODDR/XML-Parser-2.44.tar.gz"                       // 2.46 fails to cross-compile
                                     , CpanPackage fromPath "F/FR/FROGGS/SDL-2.548.tar.gz"                            // fails to parse buildInputs
                                     , CpanPackage fromPath "P/PJ/PJACKLAM/Math-BigInt-Lite-0.18.tar.gz"              // 0.19 tests faled
                                     , CpanPackage fromPath "R/RU/RURBAN/Cpanel-JSON-XS-4.17.tar.gz"                  // 4.18 add many new deps which do fail
@@ -656,7 +701,7 @@ object Cpan {
 }
 
 
-class PerlDerivation(repopath: File, name: String /* = "perl528"*/, val version: String /* = "5.28"*/) {
+class PerlDerivation(repopath: File, name: String /* = "perl530"*/, val version: String /* = "5.30"*/) {
   private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
                                        :: ( Cpan2Nix.builder_X86_64 match {
@@ -733,7 +778,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 //      s = """(?s)name\s*=\s*"[^"]+";"""         .r.replaceAllIn(s, s"name = \042${nameAndVersion}\042;")
 
       if (url != new BuildPerlPackageBlock(s).resolvedUrl)
-        s = """(?s)url\s*=\s*"?([^";]+)"?;"""     .r.replaceAllIn(s, s"url = ${url};")
+        s = """(?s)url\s*=\s*"?([^";]+)"?;"""     .r.replaceAllIn(s, s"""url = "${url}";""")
 
       s = """(?s)sha256\s*=\s*"([a-z0-9]+)";""" .r.replaceSomeIn(s, m => m.group(1).length match {
                                                                            case 64 => Some(s"sha256 = \042${sha256.base16}\042;")
@@ -795,7 +840,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
       sb append s"""    pname = "${cp.pname}";\n"""
       sb append s"""    version = "${cp.version}";\n"""
       sb append s"""    src = fetchurl {\n"""
-      sb append s"""      url = mirror://cpan/authors/id/${cp.path};\n"""
+      sb append s"""      url = "mirror://cpan/authors/id/${cp.path}";\n"""
       sb append s"""      sha256 = "${cp.sha256.base32}";\n"""
       sb append s"""    };\n"""
       (runtimeDeps(cp) -- runtimeDeps(cp).flatMap(deepRuntimeDeps _)).toArray match {
@@ -1046,23 +1091,25 @@ case class Worker(system: String, concurrency: Int, location: Worker.Location) {
   require(Set("x86_64-linux", "i686-linux", "armv7l-linux", "aarch64-linux", "x86_64-darwin") contains system)
 }
 
+
+// 1e62e86b65fde74c23afa4304ba1fcab950d99cf
 object Cpan2Nix {
-  val builder_X86_64  = Worker("x86_64-linux",   12, Worker.Local)
-  val builder_I686    = Worker("i686-linux",     12, Worker.Local)
-//val builder_X86_64  = Worker("x86_64-linux",    4, Worker.Remote("root",     "htz2.dmz",                "-p922" :: Nil))
-//val builder_I686    = Worker("i686-linux",      4, Worker.Remote("root",     "htz2.dmz",                "-p922" :: Nil))
-//val builder_DARWIN  = Worker("x86_64-darwin",   4, Worker.Remote("user",     "172.16.224.2",                       Nil))
-  val builder_AARCH32 = Worker("armv7l-linux",  100, Worker.Remote("volth",    "aarch64.nixos.community",            Nil))
-  val builder_AARCH64 = Worker("aarch64-linux", 100, Worker.Remote("volth",    "aarch64.nixos.community",            Nil))
+//val builder_X86_64  = Worker("x86_64-linux",   12, Worker.Local)
+//val builder_I686    = Worker("i686-linux",     12, Worker.Local)
+  val builder_X86_64  = Worker("x86_64-linux",   12, Worker.Remote("root",     "x13.lan",                "-p922" :: Nil))
+  val builder_I686    = Worker("i686-linux",     12, Worker.Remote("root",     "x13.lan",                "-p922" :: Nil))
+//val builder_DARWIN  = Worker("x86_64-darwin",   4, Worker.Remote("user",     "172.16.224.2",                      Nil))
+  val builder_AARCH32 = Worker("armv7l-linux",  100, Worker.Remote("volth",    "aarch64.nixos.community",           Nil))
+  val builder_AARCH64 = Worker("aarch64-linux", 100, Worker.Remote("volth",    "aarch64.nixos.community",           Nil))
 
   // todo: command-line switches
-  val doCheckout  = true
+  val doCheckout  = !true
   val doInsert    = /*"Net-Amazon-EC2" ::*/ Nil
-  val doUpgrade   = true
-  val doTestBuild: List[Worker] =    builder_AARCH64 ::
+  val doUpgrade   = !true
+  val doTestBuild: List[Worker] = // builder_AARCH64 ::
                                   // builder_AARCH32 ::
                                   // builder_I686    ::
-                                     builder_X86_64  ::
+                                  // builder_X86_64  ::
                                   Nil
 
 
@@ -1083,7 +1130,7 @@ object Cpan2Nix {
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/staging"                       :: Nil, cwd = repopath).! == 0)
-        //require(Process("git" :: "cherry-pick"             :: "68317c736e29b72387ed05be99492340df4eaf22"     :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "cherry-pick"             :: "df55a4aa20c813625bd9bbf46ffb7d77dd089bba"     :: Nil, cwd = repopath).! == 0)
 //        require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/master"                        :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "branch"   :: "-f"        :: branchName :: "HEAD"                           :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout" ::                branchName                                     :: Nil, cwd = repopath).! == 0)
@@ -1142,7 +1189,7 @@ object Cpan2Nix {
           }
         })
 
-        val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl528", version="5.28")
+        val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl530", version="5.30")
         val pullRequester = new PullRequester(repopath, theOldestSupportedPerl)
 
         // compare results of evaluation pkgs.perlPackages (nixPkgs.allPackages) and parsing of perl-packages.nix (pullRequester.buildPerlPackageBlocks)
@@ -1164,7 +1211,21 @@ object Cpan2Nix {
                     cwd = repopath).!
           }
         }
-
+/*
+        for (np <- nixPkgs.allPackages) {
+          println(np)
+        }
+        for ((name,cps) <- Cpan.byName) {
+          println(name)
+          for (cp <- cps) {
+            for ((a,b) <- cp.meta.runtimeMODs) {
+              println(" ", a, b)
+            }
+            println()
+          }
+        }
+        sys exit 1
+*/
         if (doUpgrade) {
           val toupdate = nixPkgs.allPackages sortBy { case np if np.pname.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
                                                       case np if np.pname.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
@@ -1196,9 +1257,9 @@ object Cpan2Nix {
           val nixcode = s"""|let
                             |# pkgs    = import <nixpkgs> { config.checkMetaRecursively = true; config.allowAliases = false; };
                             |  # do the build als ob the perl version is bumped
-                            |# pkgs528 = import <nixpkgs> { system = "${worker.system}"; config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.perl528; perlPackages = self.perl528Packages; }) ]; };
-                            |  pkgs530 = import <nixpkgs> { system = "${worker.system}"; config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true;                                                                                              };
-                            |  inherit (pkgs530) lib;
+                            |# pkgs530 = import <nixpkgs> { system = "${worker.system}"; config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true; overlays = [ (self: super: { perl = self.pkgs530; perlPackages = self.perl530Packages; }) ]; };
+                            |  pkgs532 = import <nixpkgs> { system = "${worker.system}"; config.checkMetaRecursively = true; config.allowUnfree = true; config.oraclejdk.accept_license = true;                                                                                              };
+                            |  inherit (pkgs532) lib;
                             |in
                             |   lib.concatMap ({pkgs, dotperl}: [
                             |     pkgs.nix-serve
@@ -1238,9 +1299,9 @@ object Cpan2Nix {
                         s"""|   ]
                             |   )
                             |   [
-                            |   # {pkgs = pkgs530; dotperl = p: p.perl528;  }
-                            |     {pkgs = pkgs530; dotperl = p: p.perl530;  }
-                            |   # {pkgs = pkgs530; dotperl = p: p.perldevel;}
+                            |   # {pkgs = pkgs532; dotperl = p: p.perl530;  }
+                            |     {pkgs = pkgs532; dotperl = p: p.perl532;  }
+                            |   # {pkgs = pkgs532; dotperl = p: p.perldevel;}
                             |   ]
                             |""".stripMargin
 

@@ -253,25 +253,89 @@ case class CpanPackage private(author: Author, pname: Name, version: Version, pa
 
   lazy val meta: MetaExcerpt = {
     val metaContent:      String              = metaFile.fold("")(file => FileUtils.readFileToString(file, "UTF-8"))
-    val fixedMetaContent: String              = metaFile.fold("")(_.getName) match {
-                                                  case "String-CamelCase-0.03.meta"                                  => metaContent.replace("author:       author:"                                                  , "author:"                                                             )
-                                                  case "OpenFrame-WebApp-0.04.meta"
-                                                     | "Acme-Scurvy-Whoreson-BilgeRat-Backend-insultserver-1.0.meta" => metaContent.replace("\n:\n"                                                                  , ":\n"                                                                 )
-                                                  case "Template-Plugin-KwikiFormat-1.04.meta"                       => metaContent.replace("\nTanimoto"                                                             , " Tanimoto"                                                           )
-                                                  case "Daemon-Whois-1.11.meta"                                      => metaContent.replace("\nunder the following license: Eclipse Public License, Version 1.0\nSee", " under the following license Eclipse Public License, Version 1.0 See")
-                                                  case "ASP4-1.087.meta"                                             => metaContent.replace("Time::HiRes "                                                           , "Time::HiRes:"                                                        )
-                                                  case "Net-Delicious-Export-Post-XBEL-1.4.meta"                     => metaContent.replace(": >= "                                                                  , ": "                                                                  )
-                                                  case "SVK-v2.0.2.meta"                                             => metaContent.replace("version: !!perl/hash:version "                                          , "version:"                                                            )
-                                                  case "WebService-Audioscrobbler-0.08.meta"
-                                                     | "URI-ParseSearchString-3.51.meta"
-                                                     | "Class-Serializer-0.04.meta"
-                                                     | "subs-parallel-0.09.meta"                                     => metaContent.replace("\r\","                                                                  , "\","                                                                 )
-                                                  case "Mail-Postfixadmin-0.20130624.meta"                           => metaContent.replace("\t"                                                                     , "  "                                                                  )
-                                                  case "VMS-Time-0_1.meta"                                           => ""
+    val fixedMetaContent: String              = (metaFile.fold("")(_.getName) match { // fix malformed yaml/json
+                                                  case _ if metaContent.startsWith("\u0003")                         => "" // VMS format
+                                                  case "String-CamelCase-0.03.meta"                                  => metaContent.replace("author:       author:"                                                  , "author:"                                                                )
+                                                  case "Pangloss-0.06.meta"
+                                                     | "Array-Stream-Transactional-Matcher-1.00.meta"
+                                                     | "OpenFrame-WebApp-0.04.meta"
+                                                     | "Acme-Scurvy-Whoreson-BilgeRat-Backend-insultserver-1.0.meta" => metaContent.replace("\n:\n"                                                                  , ":\n"                                                                    )
+                                                  case "Template-Plugin-KwikiFormat-1.04.meta"                       => metaContent.replace("\nTanimoto"                                                             , " Tanimoto"                                                              )
+                                                  case "Daemon-Whois-1.11.meta"                                      => metaContent.replace("\nunder the following license: Eclipse Public License, Version 1.0\nSee", " under the following license Eclipse Public License, Version 1.0 See"   )
+                                                  case "Class-ArrayObjects-1.03.meta"                                => metaContent.replace("Originan author:"                                                       , "Originan author "                                                       )
+                                                                                                                                   .replace("Manitained by:"                                                         , "Manitained by "                                                         )
+                                                  case "Crypt-FileHandle-0.03.meta"                                  => metaContent.replace("\"runtime\" : \n"                                                       , "\"runtime\" : {\n"                                                      )
+                                                  case "DBIx-JCL-0.12.meta"                                          => metaContent.replace("DBIx::JCL"                                                              , "DBIx::JCL:"                                                             )
+                                                  case "Geo-Coordinates-KKJ-0.01.meta"                               => metaContent.replace("Geo::Coordinates::KKJ"                                                  , "Geo::Coordinates::KKJ:"                                                 )
+                                                  case "MP3-Tag-1.13.meta"                                           => metaContent.replace("\"Thomas Geffert\" <thg@users.sourceforge.net>, \"Ilya Zakharevich\""   , "Thomas Geffert <thg@users.sourceforge.net>, Ilya Zakharevich"           )
+                                                  case "Acme-AbhiIsNot-0.03.meta"                                    => metaContent.replace("\"abhishek\" <\"abhishekisnot@gmail.com\">"                             , "abhishek <abhishekisnot@gmail.com>"                                     )
+                                                  case "Debug-LTrace-0.03.meta"                                      => metaContent.replace("\"koorchik\" <\"koorchik@cpan.org\">"                                   , "koorchik <koorchik@cpan.org>"                                           )
+                                                  case "Data-Dmap-0.08.meta"                                         => metaContent.replace("\"Michael Zedeler\" <\"michael@zedeler.dk\">"                           , "Michael Zedeler <michael@zedeler.dk>"                                   )
+                                                  case "PFIX-0.03.meta"                                              => metaContent.replace("\"Gabriel Galibourg\" <\"\">"                                           , "Gabriel Galibourg"                                                      )
+                                                  case "LibCAS-0.02a.meta"                                           => metaContent.replace("\"Michael Morris\" <\"michael.m.morris@gmail.com\">"                    , "Michael Morris <michael.m.morris@gmail.com>"                            )
+                                                  case "VANAMBURG-Magic-0.03.meta"
+                                                     | "VANAMBURG-Magic-0.04.meta"                                   => metaContent.replace("\"Gordon Van Amburg\" <\"vanamburg@cpan.org\">"                         , "Gordon Van Amburg <vanamburg@cpan.org>"                                 )
+                                                  case "Document-eSign-Docusign-0.06.meta"                           => metaContent.replace("Tyler Hardison <tyler@seraph-net.net>, \n"                              , "Tyler Hardison <tyler@seraph-net.net>, "                                )
+                                                  case "Data-FormValidator-Constraints-HTTP-0.01.meta"               => metaContent.replace("\nconstraint methods"                                                   , " constraint methods"                                                    )
+                                                  case "Maypole-Plugin-Authentication-UserSessionCookie-1.8.meta"    => metaContent.replace("\nMaintained by Marcus Ramberg, C<marcus@thefeed.no>"                   , " Maintained by Marcus Ramberg, C<marcus@thefeed.no>"                    )
+                                                                                                                                   .replace("\noptionally, users"                                                    , " optionally, users"                                                     )
+                                                  case "ASP4-1.087.meta"                                             => metaContent.replace("Time::HiRes "                                                           , "Time::HiRes:"                                                           )
+                                                  case "Bryar-4.0.meta"                                              => metaContent.replace("Template::Provider::Encoding 0"                                         , "Template::Provider::Encoding: 0"                                        )
+                                                  case "Apache2-WebApp-Plugin-CGI-0.10.meta"                         => metaContent.replace("Test::More"                                                             , "Test::More: 0"                                                          )
+                                                  case "Devel-FastProf-0.08.meta"                                    => metaContent.replace("\"fast\" perl per-line profiler"                                        , "\"fast perl per-line profiler\""                                        )
+                                                  case "Data-Predicate-2.1.1.meta"                                   => metaContent.replace("- \"ayates\" <\"\">"                                                    , "- \"ayates <>\""                                                        )
+                                                  case "Ubic-Watchdog-Notice-0.31.meta"                              => metaContent.replace("\\@"                                                                    , "@"                                                                      )
+                                                  case "Net-Enum-DNSServer.meta"                                     => metaContent.replace("provides =>"                                                            , "\"provides\":"                                                          )
+                                                                                                                                   .replace("file    =>"                                                             , "\"file\":"                                                              )
+                                                                                                                                   .replace("version =>"                                                             , "\"version\":"                                                           )
+                                                                                                                                   .replace("'"                                                                      , "\""                                                                     )
+                                                                                                                                   .replace("=>"                                                                     , ":"                                                                      )
+                                                                                                                                   .replace("27_02\","                                                               , "27_02\""                                                                )
+                                                                                                                                   .replace("DNS.pm\",\n   },"                                                       , "DNS.pm\"}"                                                              )
+                                                  case "SAS-TRX-0.07.meta"                                           => metaContent.replace("[Abstract] class, provides SAS transport (XPORT) format decoding"       , "Abstract class, provides SAS transport (XPORT) format decoding"         )
+                                                  case "Rubyish-Attribute-1.2.meta"                                  => metaContent.replace("ruby-like accessor builder: attr_accessor, attr_writer and attr_reader" , "ruby-like accessor builder. attr_accessor, attr_writer and attr_reader" )
+                                                  case "Froody-42.034.meta"                                          => metaContent.replace("\nbut if you're reporting bugs I<please> use the RT system mentioned above so\nwe",
+                                                                                                                                            " but if you're reporting bugs I<please> use the RT system mentioned above so we" )
+                                                  case "Module-Build-Kwalitee-0.24.meta"                             => metaContent.replace("\nMark Fowler <mark@twoshortplanks.com>,\nNorman Nunley <nnunley@fotango.com>,\nChia-liang Kao <clkao@clkao.org>,\net al.",
+                                                                                                                                            " Mark Fowler <mark@twoshortplanks.com>, Norman Nunley <nnunley@fotango.com>, Chia-liang Kao <clkao@clkao.org>, et al.")
+                                                  case "Data-FetchPath-0.02.meta"                                    => metaContent.replace("\"eval\"able paths to your complex data values"                         , "eval'able paths to your complex data values"                            )
+                                                  case "Wiki-Toolkit-Plugin-Ping-0.03.meta"                          => metaContent.replace("\"ping\" various services when nodes are written"                       , "ping various services when nodes are written"                           )
+                                                  case "IRCDHelp-0.02.meta"                                          => metaContent.replace("version_from "                                                          , "version_from: "                                                         )
+                                                  case "Oracle-ZFSSA-Client-0.01.meta"                               => metaContent.replace("\"LWP::UserAgent\" : \"6.05\""                                          , "\"LWP::UserAgent\" : \"6.05\","                                         )
+                                                                                                                                   .replace("\"JSON\" : \"2.90\""                                                    , "\"JSON\" : \"2.90\","                                                   )
+                                                  case "AlignAid-v0.0.2.meta"
+                                                     | "Apache-Auth-Subrequest-v0.0.1.meta"
+                                                     | "Apache-Image-v0.0.4.meta"
+                                                     | "CGI-Wiki-Store-Mediawiki-0.02.meta"
+                                                     | "Pushmi-v1.0.0.meta"
+                                                     | "SVK-Log-Filter-Babelfish-0.0.3.meta"
+                                                     | "SVK-Log-Filter-Date-0.0.1.meta"
+                                                     | "SVK-Log-Filter-Mndrix-0.0.3.meta"
+                                                     | "SVK-Log-Filter-Stats-0.0.4.meta"
+                                                     | "SVK-v2.0.2.meta"
+                                                     | "Text-CSV_PP-Simple-0.0.5.meta"
+                                                     | "Time-Piece-Adaptive-0.03.meta"                               => metaContent.replaceAll("version: !.+\n"                                                      , "version:\n"                                                             )
+                                                  case "Apache-SPARQL-0.22.meta"
+                                                     | "Apache-SPARQL-RDFStore-0.3.meta"
+                                                     | "Apache-Session-DBMS-0.32.meta"
+                                                     | "Class-DBI-Plugin-FilterOnClick-1.2.meta"
+                                                     | "Class-DBI-Plugin-Senna-0.01.meta"
+                                                     | "Tie-Senna-0.02.meta"
+                                                     | "WWW-Sucksub-Attila-0.06.meta"
+                                                     | "WWW-Sucksub-Divxstation-0.01.meta"
+                                                     | "WWW-Sucksub-Divxstation-0.04.meta"
+                                                     | "WWW-Sucksub-Extratitles-0.01.meta"
+                                                     | "WWW-Sucksub-Frigo-0.03.meta"
+                                                     | "WWW-Sucksub-Vostfree-0.05.meta"
+                                                     | "XML-Trivial-0.06.meta"
+                                                     | "Net-Delicious-Export-Post-XBEL-1.4.meta"                     => metaContent.replaceAll(":\\s+>=?\\s*"                                                        , ": "                                                                     )
+                                                  case "XLS-Simple-0.02.meta"                                        => metaContent.replaceAll("[\u0080-\uffff]"                                                     , "  "                                                                     )
                                                   case "Video-FFmpeg-0.47.meta"                                      => metaContent split '\n' map (_.stripPrefix(" ")) mkString "\n"
-                                                  case "DMTF-CIM-WSMan-v0.09.meta"                                   => metaContent split '\n' map (_.stripPrefix("{").stripSuffix("\r").stripSuffix("}").replace("{{", "{").replace("}}", "}")) mkString "\n"
+                                                  case "Asm-Z80-Table-0.03.meta"
+                                                     | "RandomJungle-0.05.meta"
+                                                     | "DMTF-CIM-WSMan-v0.09.meta"                                   => metaContent split '\n' map (_.stripPrefix("{").stripSuffix("\r").stripSuffix("}").replace("{{", "{").replace("}}", "}")) mkString "\n"
                                                   case _                                                             => metaContent
-                                                }
+                                                }).replaceAll("[\u0001-\u0008\u000B-\u001F]", "").replace("\t", "  ")
     var runtime:          Map[String, String] =                                                Map.empty
     var build:            Map[String, String] = if (isModule) Map("Module::Build" -> "0") else Map.empty
     var description:      Option[String]      = None
@@ -303,20 +367,26 @@ case class CpanPackage private(author: Author, pname: Name, version: Version, pa
       val yaml: java.util.Map[String, Any] = new org.yaml.snakeyaml.Yaml load fixedMetaContent
       require(yaml != null, s"invalid yaml $path")
 
-      println(__LINE__, runtime.map(_._1.getClass))
       yaml.get("requires"          ) match { case null                  =>
-                                             case s: String             => println(__LINE__, s"s=[$s]")
-                                                                           runtime ++= s.trim.split("\\s+").sliding(2,2).map{case Array(k,v) => k->v}
-                                             case m: java.util.Map[_,_] => runtime ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString)   } }
+                                             case s: String             => //println(__LINE__, s"s=[$s]")
+                                                                           runtime ++= s.trim.split("\\s+").sliding(2,2).map{ case Array(k)   => k->"0"
+                                                                                                                              case Array(k,v) => k->v }
+                                             case m: java.util.Map[_,_] => runtime ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString) } }
       yaml.get("configure_requires") match { case null                  =>
-                                             case m: java.util.Map[_,_] => build   ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString)   } }
+                                             case m: java.util.Map[_,_] => build   ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString) } }
       yaml.get("build_requires"    ) match { case null                  =>
-                                             case m: java.util.Map[_,_] => build   ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString)   } }
+                                             case s: String             => //println(__LINE__, s"s=[$s]")
+                                                                           build   ++= s.trim.split("\\s+").sliding(2,2).map{ case Array(k)   => k->"0"
+                                                                                                                              case Array(k,v) => k->v }
+                                             case m: java.util.Map[_,_] => build   ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString) } }
       yaml.get("x_test_requires"   ) match { case null                  =>
-                                             case m: java.util.Map[_,_] => build   ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString)   } }
+                                             case m: java.util.Map[_,_] => build   ++= m.asScala.map{ case (k,v) => k.toString->Option(v).fold("")(_.toString) } }
 
-      description = Option(yaml.get("abstract").asInstanceOf[String])
-      licenses    =  ( (yaml.get("license") match {
+      description = yaml.get("abstract") match {
+                      case null => None
+                      case s    => Some(s.toString)
+                    }
+      licenses    = (  (yaml.get("license") match {
                           case null                           => Set()
                           case s: String                      => Set(s)
                           case a: java.util.ArrayList[String] => a.asScala.toSet
@@ -324,7 +394,7 @@ case class CpanPackage private(author: Author, pname: Name, version: Version, pa
                        (for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
                              b <- Option(a.get("license")))
                          yield b)
-                     ) flatMap (_ split ",\\s*") flatMap (License fromString _)
+                    ) flatMap (_ split ",\\s*") flatMap (License fromString _)
       homepage    = for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
                          b <- Option(a.get("homepage")))
                     yield b
@@ -1211,13 +1281,14 @@ object Cpan2Nix {
                     cwd = repopath).!
           }
         }
-/*
-        for (np <- nixPkgs.allPackages) {
-          println(np)
-        }
-        for ((name,cps) <- Cpan.byName) {
+/**
+//      for (np <- nixPkgs.allPackages) {
+//        println(np)
+//      }
+        for ((name,cps) <- Cpan.byName.toArray.sortBy(_._1.toString)) {
           println(name)
           for (cp <- cps) {
+            println(cp.metaFile)
             for ((a,b) <- cp.meta.runtimeMODs) {
               println(" ", a, b)
             }
@@ -1225,7 +1296,7 @@ object Cpan2Nix {
           }
         }
         sys exit 1
-*/
+**/
         if (doUpgrade) {
           val toupdate = nixPkgs.allPackages sortBy { case np if np.pname.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
                                                       case np if np.pname.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'

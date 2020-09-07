@@ -525,7 +525,7 @@ object CpanErrata {
                                     , Name("Archive-Zip"                             ) -> Map( Mod("Test::MockModule")                 -> Version("0"))
                                     , Name("Catalyst-Controller-POD"                 ) -> Map( Mod("inc::Module::Install")             -> Version("0"))
                                     , Name("Catalyst-Runtime"                        ) -> Map( Mod("Type::Tiny")                       -> Version("0"))
-                                    , Name("Catalyst-Authentication-Store-DBIx-Class") -> Map( Mod("Test::Warn")                       -> Version("0"))
+//                                  , Name("Catalyst-Authentication-Store-DBIx-Class") -> Map( Mod("Test::Warn")                       -> Version("0"))
                                     , Name("Catalyst-Authentication-Store-Htpasswd"  ) -> Map( Mod("Test::WWW::Mechanize")             -> Version("0")
                                                                                              , Mod("Test::LongString")                 -> Version("0"))
                                     , Name("Catalyst-Controller-HTML-FormFu"         ) -> Map( Mod("Test::LongString")                 -> Version("0"))
@@ -647,6 +647,15 @@ object CpanErrata {
                                                                                              , Mod("Test::MemoryGrowth")               -> Version("0"))
                                     , Name("LWP-UserAgent-DNS-Hosts"                 ) -> Map( Mod("Test::TCP")                        -> Version("0")
                                                                                              , Mod("Test::SharedFork")                 -> Version("0"))
+                                    , Name("Net-FreeDB"                              ) -> Map( Mod("Test::Most")                       -> Version("0")
+                                                                                             , Mod("Test::Exception")                  -> Version("0")
+                                                                                             , Mod("Test::Differences")                -> Version("0")
+                                                                                             , Mod("Test::Warn")                       -> Version("0")
+                                                                                             , Mod("Test::Deep")                       -> Version("0"))
+                                    , Name("SDL"                                     ) -> Map( Mod("Test::Exception")                  -> Version("0")
+                                                                                             , Mod("Test::Differences")                -> Version("0")
+                                                                                             , Mod("Test::Warn")                       -> Version("0")
+                                                                                             , Mod("Test::Deep")                       -> Version("0"))
                                     , Name("Device-MAC"                              ) -> Map( Mod("Test::Exception")                  -> Version("0")
                                                                                              , Mod("Test::Differences")                -> Version("0")
                                                                                              , Mod("Test::Warn")                       -> Version("0")
@@ -685,6 +694,7 @@ object CpanErrata {
                                     , Name("XML-SAX"                          ) -> Map( Mod("XML::SAX::Exception")          -> Version("0"))
                                     , Name("XML-Grove"                        ) -> Map( Mod("Data::Grove")                  -> Version("0"))
                                     , Name("XML-Handler-YAWriter"             ) -> Map( Mod("XML::Parser::PerlSAX")         -> Version("0"))
+                                    , Name("ExtUtils-F77"                     ) -> Map( Mod("File::Which")                  -> Version("0"))
                                     , Name("CPANPLUS"                         ) -> Map( Mod("Archive::Extract")             -> Version("0")  // https://github.com/NixOS/nixpkgs/pull/41394#issuecomment-394208166
                                                                                       , Mod("Log::Message")                 -> Version("0")
                                                                                       , Mod("Module::Pluggable")            -> Version("0")
@@ -697,6 +707,8 @@ object CpanErrata {
                                                                                       , Mod("YAML::XS")                     -> Version("0"))
                                     , Name("Crypt-ScryptKDF"                  ) -> Map( Mod("Crypt::OpenSSL::Random")       -> Version("0")) // https://github.com/NixOS/nixpkgs/pull/71128
                                     , Name("DBD-Sybase"                       ) -> Map( Mod("DBI")                          -> Version("0"))
+                                    , Name("CatalystX-Script-Server-Starman"  ) -> Map( Mod("MooseX::Types")                -> Version("0")
+                                                                                      , Mod("Pod::Parser")                  -> Version("0"))
                                     , Name("Device-OUI"                       ) -> Map( Mod("Class::Accessor::Grouped")     -> Version("0")
                                                                                       , Mod("Sub::Exporter")                -> Version("0")
                                                                                       , Mod("LWP")                          -> Version("0"))
@@ -715,18 +727,21 @@ object CpanErrata {
                                     , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
 //                                  , CpanPackage fromPath "F/FR/FROGGS/SDL-2.548.tar.gz"                            // fails to parse buildInputs
                                     , CpanPackage fromPath "R/RU/RURBAN/Cpanel-JSON-XS-4.17.tar.gz"                  // 4.18 add many new deps which do fail
+                                    , CpanPackage fromPath "S/SH/SHANCOCK/Perl-Tidy-20200110.tar.gz"                 // 20200822 test fails
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
-  val doCheckOverride          = Map( Name("Net-HTTP")                             -> (false, "wants network")
-                                    , Name("Net-Amazon-MechanicalTurk")            -> (false, "wants network")
-                                    , Name("Task-Catalyst-Tutorial")               -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
-                                    , Name("Dist-Zilla-PluginBundle-TestingMania") -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
-                                    , Name("Catalyst-Controller-HTML-FormFu")      -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
-                                    , Name("RSS-Parser-Lite")                      -> (false, "creates files in HOME")
-                                    , Name("B-C")                                  -> (false, "test fails")
-                                    , Name("Test-Cmd")                             -> (false, "test fails")
-                                    , Name("Tie-Hash-Indexed")                     -> (false, "test fails on some machines")
+  val doCheckOverride          = Map( Name("Net-HTTP")                                  -> (false, "wants network")
+                                    , Name("Net-Amazon-MechanicalTurk")                 -> (false, "wants network")
+                                    , Name("Task-Catalyst-Tutorial")                    -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
+                                    , Name("Dist-Zilla-PluginBundle-TestingMania")      -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
+                                    , Name("Catalyst-Controller-HTML-FormFu")           -> (false, "fails with 'open3: exec of .. perl .. failed: Argument list too long at .../TAP/Parser/Iterator/Process.pm line 165.'")
+                                    , Name("RSS-Parser-Lite")                           -> (false, "creates files in HOME")
+                                    , Name("B-C")                                       -> (false, "test fails")
+                                    , Name("Test-Cmd")                                  -> (false, "test fails")
+//                                  , Name("Tie-Hash-Indexed")                          -> (false, "test fails on some machines")
+                                    , Name("Catalyst-Authentication-Store-DBIx-Class")  -> (false, "test fails")
+                                    , Name("Crypt-OpenPGP")                             -> (false, "test fails with 'No random source available!'")
                                     )
 }
 
@@ -946,7 +961,7 @@ object BuildPerlPackageBlock {
 
 
 
-class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
+class PullRequester(repopath: File, supportedPerls: List[PerlDerivation]) {
   var `perl-packages.nix` = FileUtils.readFileToString(new File(repopath, "/pkgs/top-level/perl-packages.nix"), "UTF-8")
   var buildPerlPackageBlocks = collection.immutable.TreeMap.empty[String, BuildPerlPackageBlock]
 
@@ -980,26 +995,29 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
   private def modToPackage(mod: Mod, version: Version): Option[CpanPackage] =
     if (mod.toString equalsIgnoreCase "perl")
       None
-    else
-      theOldestSupportedPerl.versionOf(mod) match {
-        case Some(localver) if version<=localver                      => //println(s"module $mod version $version is in theOldestSupportedPerl")
-                                                                         None
-        case _ if CpanErrata.modsToIgnore.get(mod).exists(_(version)) => //println(s"module $mod version $version ignored")
-                                                                         None
-        case _                                                        =>
-          Cpan.byMod(mod).toList match {
-            case Nil                                                                     => throw new RuntimeException(s"mod `$mod' not found, maybe ${Cpan.byMod.keys filter (_.toString.toUpperCase.replaceAll("[:-]","") == mod.toString.toUpperCase.replaceAll("[:-]","")) mkString " "}");
-            case cp::Nil if cp.pname.toString equalsIgnoreCase "perl"                    => None
-            case cp::Nil if CpanErrata.namesToIgnore.get(cp.pname).exists(_(cp.version)) => //println(s"package $cp ignored")
-                                                                                            None
-            case cp::Nil                                                                 => CpanErrata.pinnedPackages.find(_.pname == cp.pname) match {
-                                                                                              case Some(pinnedcp) => Some(pinnedcp)
-                                                                                              case None           => Some(cp)
-                                                                                            }
-            case cpps                                                                    => throw new RuntimeException(s"mod `$mod' provided by many $cpps");
-          }
+    else {
+      val builtinsVersions: List[Option[Version]] = supportedPerls.map(_.versionOf(mod))
+      if (builtinsVersions.nonEmpty && builtinsVersions.forall{ case Some(builtinsVersion) => version <= builtinsVersion
+                                                                case None                  => false }) {
+      //println(s"module $mod version $version is built-in in all perls ${supportedPerls.map(_.perlVersion) mkString " "}")
+        None
+      } else if (CpanErrata.modsToIgnore.get(mod).exists(_(version))) {
+      //println(s"module $mod version $version ignored")
+        None
+      } else {
+        Cpan.byMod(mod).toList match {
+          case Nil                                                                     => throw new RuntimeException(s"mod `$mod' not found, maybe ${Cpan.byMod.keys filter (_.toString.toUpperCase.replaceAll("[:-]","") == mod.toString.toUpperCase.replaceAll("[:-]","")) mkString " "}");
+          case cp::Nil if cp.pname.toString equalsIgnoreCase "perl"                    => None
+          case cp::Nil if CpanErrata.namesToIgnore.get(cp.pname).exists(_(cp.version)) => //println(s"package $cp ignored")
+                                                                                          None
+          case cp::Nil                                                                 => CpanErrata.pinnedPackages.find(_.pname == cp.pname) match {
+                                                                                            case Some(pinnedcp) => Some(pinnedcp)
+                                                                                            case None           => Some(cp)
+                                                                                          }
+          case cpps                                                                    => throw new RuntimeException(s"mod `$mod' provided by many $cpps");
+        }
       }
-
+    }
   private def filterDeps(cp: CpanPackage, deps: Iterable[CpanPackage]) = for (d <- deps if d != cp;
                                                                                         if !(d.pname.toString.equalsIgnoreCase("Module-Build") && cp.isModule);
                                                                                         if !(CpanErrata.dependenciesToBreak(cp.pname) contains d.pname))
@@ -1099,12 +1117,13 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
     }
 **/
 
-    def isBuiltInTheOldestSupportedPerl: Boolean = {
-      val mods:     Map[Mod, Version]         = Cpan.providedMods(cp)
-      val tosmMods: Map[Mod, (Version, Option[Version])] = mods map { case (mod, cpanVersion) => mod -> (cpanVersion, theOldestSupportedPerl.versionOf(mod)) }
-      val rc = tosmMods.nonEmpty &&
-               tosmMods.forall{ case (mod, (cpanVersion, Some(tosmVersion))) => cpanVersion <= tosmVersion
-                                case _                                       => false }
+    def isBuiltInPerl: Boolean = {
+      val builtinsMods: Map[Mod, (Version, List[Option[Version]])] = Cpan.providedMods(cp) map { case (mod, cpanVersion) => mod -> (cpanVersion, supportedPerls.map(_.versionOf(mod))) }
+      val rc = builtinsMods.nonEmpty &&
+               builtinsMods.forall{ case (mod, (cpanVersion, builtinsVersions))  => builtinsVersions.forall{ case Some(builtinsVersion) => cpanVersion <= builtinsVersion
+                                                                                                             case None                  => false }
+                                    case _                                       => false
+                                  }
 //      if (rc) {
 //        println(s"| $np -> $cp")
 //        for (x <- tosmMods)
@@ -1117,9 +1136,9 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
     onp match {
       case Some(np) =>
         buildPerlPackageBlocks find (_._2.url == np.url) match {
-          case Some((_, block)) if isBuiltInTheOldestSupportedPerl =>
+          case Some((_, block)) if isBuiltInPerl =>
             // do mutate `perl-packages.nix`
-            `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null; # part of Perl ${theOldestSupportedPerl.perlVersion}""")
+            `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null; # part of Perl ${supportedPerls.map(_.perlVersion) mkString ", "}""")
 
             val pw = new java.io.PrintWriter(new File(repopath, "/pkgs/top-level/perl-packages.nix"))
             pw write `perl-packages.nix`
@@ -1263,8 +1282,7 @@ object Cpan2Nix {
           if (!repopath.exists) {
             require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
           } else {
-            require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
-//          require(Process("git" :: "fetch" :: "origin" :: "master"  :: Nil, cwd = repopath).! == 0)
+//          require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
           }
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
@@ -1331,8 +1349,10 @@ object Cpan2Nix {
           }
         })
 
-        val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl530", perlVersion="5.30.3")
-        val pullRequester = new PullRequester(repopath, theOldestSupportedPerl)
+        val supportedPerls = new PerlDerivation(repopath, name="perl530",   perlVersion="5.30.3") ::
+                             new PerlDerivation(repopath, name="perl532",   perlVersion="5.32.0") ::
+                             new PerlDerivation(repopath, name="perldevel", perlVersion="5.33.1") :: Nil
+        val pullRequester = new PullRequester(repopath, supportedPerls)
 
         // compare results of evaluation pkgs.perlPackages (nixPkgs.allPackages) and parsing of perl-packages.nix (pullRequester.buildPerlPackageBlocks)
         for (np <- nixPkgs.allPackages if !pullRequester.buildPerlPackageBlocks.exists(_._2.pname == np.pname)) {
@@ -1393,7 +1413,8 @@ object Cpan2Nix {
           }
 
 //        require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick"             :: "9bb5f206c2981b61fb70d7d6df8675d07b72acd8"     :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick"             :: "b235c10a7536c511a1519064770dc13dcc31a155"     :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick"             :: "80ad38e79ebd775e23d9a5571ffaf5815bbfe2ae"     :: Nil, cwd = repopath).! == 0)
         }
 
 

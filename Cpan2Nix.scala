@@ -15,7 +15,7 @@ exit(run( CLASS     => 'Cpan2Nix'
 
 import `io.circe::circe-parser:0.9.1`
 import `org.yaml:snakeyaml:1.20`
-import `commons-io:2.6`,                           org.apache.commons.io.FileUtils
+import `commons-io:2.6`,                            org.apache.commons.io.FileUtils
 
 import ms.webmaster.launcher.position._
 import java.io.File
@@ -30,6 +30,8 @@ import scala.concurrent.Await
 import `io.monix::monix:3.2.2`
 import monix.eval.Task
 import monix.execution.Scheduler
+
+import `../_absalon/NixParser.scala`,               ms.webmaster.absalon.nixparser
 
 class Version(s: String) extends Ordered[Version] {
 //require(s exists (c => '0'<=c && c<='9'), s"Version `$s' is expected to contain at least a digit")
@@ -406,9 +408,9 @@ case class CpanPackage private(author: Author, pname: Name, version: Version, pa
                       case s    => Some(s.toString)
                     }
       licenses    = (  (yaml.get("license") match {
-                          case null                           => Set()
-                          case s: String                      => Set(s)
-                          case a: java.util.ArrayList[String] => a.asScala.toSet
+                          case null                      => Set()
+                          case s: String                 => Set(s)
+                          case a: java.util.ArrayList[_] => a.asScala.map(_.toString).toSet
                         }) ++
                        (for (a <- Option(yaml.get("resources").asInstanceOf[java.util.Map[String, String]]);
                              b <- Option(a.get("license")))
@@ -543,6 +545,7 @@ object CpanErrata {
                                     , Name("Corona"                                  ) -> Map( Mod("Test::SharedFork")                 -> Version("0")
                                                                                              , Mod("Test::TCP")                        -> Version("0"))
                                     , Name("CPAN"                                    ) -> Map( Mod("Archive::Zip")                     -> Version("0"))
+                                    , Name("Crypt-SSLeay"                            ) -> Map( Mod("Path::Class")                      -> Version("0"))
                                     , Name("Data-FormValidator"                      ) -> Map( Mod("CGI")                              -> Version("0"))
                                     , Name("Data-Page-Pageset"                       ) -> Map( Mod("Class::Accessor")                  -> Version("0")
                                                                                              , Mod("Data::Page")                       -> Version("0")
@@ -649,11 +652,14 @@ object CpanErrata {
                                                                                              , Mod("Test::Warn")                       -> Version("0")
                                                                                              , Mod("Test::Deep")                       -> Version("0"))
                                     , Name("Device-OUI"                              ) -> Map( Mod("Test::Exception")                  -> Version("0"))
+
                                     ) withDefaultValue Map.empty
   val extraRuntimeDependencies = Map( Name("Alien-Build"                      ) -> Map( Mod("PkgConfig")                    -> Version("0"))
                                     , Name("Any-Moose"                        ) -> Map( Mod("Mouse")                        -> Version("0")
                                                                                       , Mod("Moose")                        -> Version("0"))
                                     , Name("Crypt-PKCS10"                     ) -> Map( Mod("Convert::ASN1")                -> Version("0"))
+                                    , Name("Crypt-SSLeay"                     ) -> Map( Mod("LWP::Protocol::https")         -> Version("0")
+                                                                                      , Mod("Bytes::Random::Secure")        -> Version("0"))
                                     , Name("GDTextUtil"                       ) -> Map( Mod("GD")                           -> Version("0"))
                                     , Name("Gtk2-Unique"                      ) -> Map( Mod("Cairo")                        -> Version("0")
                                                                                       , Mod("Pango")                        -> Version("0"))
@@ -703,10 +709,11 @@ object CpanErrata {
                                     , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11,4.12 test failed
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
                                     , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
-                                    , CpanPackage fromPath "T/TI/TINITA/Inline-0.83.tar.gz"                          // prevent downgrade to 0.82
+//                                  , CpanPackage fromPath "T/TI/TINITA/Inline-0.83.tar.gz"                          // prevent downgrade to 0.82
+                                    , CpanPackage fromPath "N/NA/NANIS/Crypt-SSLeay-0.73_06.tar.gz"                  // newer than in CPAN
 //                                  , CpanPackage fromPath "I/IS/ISAAC/libapreq2-2.13.tar.gz"                        // error parsing derivation (span2nix fixes sha256 of a patch)
                                     , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
-                                    , CpanPackage fromPath "F/FR/FROGGS/SDL-2.548.tar.gz"                            // fails to parse buildInputs
+//                                  , CpanPackage fromPath "F/FR/FROGGS/SDL-2.548.tar.gz"                            // fails to parse buildInputs
                                     , CpanPackage fromPath "R/RU/RURBAN/Cpanel-JSON-XS-4.17.tar.gz"                  // 4.18 add many new deps which do fail
                                     )
 
@@ -788,7 +795,7 @@ object Cpan {
 }
 
 
-class PerlDerivation(repopath: File, name: String /* = "perl530"*/, val version: String /* = "5.30"*/) {
+class PerlDerivation(repopath: File, name: String /* = "perl530"*/, val perlVersion: String /* = "5.30.3"*/) {
   private[this] var derivation = Process( "nix-build" :: "--show-trace"
                                        :: "--option" :: "binary-caches" :: "http://cache.nixos.org/"
                                        :: ( Cpan2Nix.builder_X86_64 match {
@@ -826,150 +833,134 @@ class PerlDerivation(repopath: File, name: String /* = "perl530"*/, val version:
   })
 }
 
+import nixparser.{Token,Expr}
+import Expr.{Val,Select,Apply,String1,String2,Ident,Attrs,KV,AntiQuote,AttrEntry,AttrKey,Inherited,InheritedFrom,BinOp,Assert,OpHasAttr,LetIn,URL,NixList}
+
+// a typical code block in `perl-packages.nix`
+class BuildPerlPackageBlock(val nixpkgsName:           String,
+                            val source:                String,
+                            val ast:                   Apply,
+                            ) {
+  case class WithToken[T](t: Token, x: T)
+  private val Apply(vBuilder @ Val("buildPerlPackage"|"buildPerlModule"), inner:Attrs) = ast
+  val wPname:                 WithToken[Name]                 = inner        .parts.collectFirst{ case    KV(Seq(Ident("pname"                )), e@ String1(Seq(Left(pnameString  )))) => WithToken(e, Name   (pnameString  ))                                        } getOrElse (throw new RuntimeException(s"no pname= in `${source}`"))
+  val wVersion:               WithToken[Version]              = inner        .parts.collectFirst{ case    KV(Seq(Ident("version"              )), e@ String1(Seq(Left(versionString)))) => WithToken(e, Version(versionString))                                        } getOrElse (throw new RuntimeException(s"no version= in `${source}`"))
+  val fetchurlAttrs:          Attrs                           = inner        .parts.collectFirst{ case    KV(Seq(Ident("src"                  )), Apply(                         Val("fetchurl"),        attrs:Attrs)) => attrs                                        } getOrElse (throw new RuntimeException(s"no src= in `${source}` `$inner`"))
+  val wUrl:                   WithToken[String]               = fetchurlAttrs.parts.collectFirst{ case    KV(Seq(Ident("url"                  )), e@ String1(fragments))                => WithToken(e, fragments.map{
+                                                                                                                                                                                                          case Left(s)                          => s
+                                                                                                                                                                                                          case Right(AntiQuote(Val("pname"  ))) => pname.toString
+                                                                                                                                                                                                          case Right(AntiQuote(Val("version"))) => version.toString
+                                                                                                                                                                                                        }.mkString)
+                                                                                                  case    KV(Seq(Ident("url"                  )), e@ URL    (urlString))                => WithToken(e, urlString)                                                     } getOrElse (throw new RuntimeException(s"no url= in `${fetchurlAttrs}`"))
+  val wSha256:                WithToken[String]               = fetchurlAttrs.parts.collectFirst{ case    KV(Seq(Ident("sha256"               )), e@ String1(Seq(Left(sha))))           => WithToken(e, sha)                                                           } getOrElse (throw new RuntimeException(s"no sha256= in `${fetchurlAttrs}`"))
+  val wPropagatedBuildInputs: Option[WithToken[List[String]]] = inner        .parts.collectFirst{ case e@ KV(Seq(Ident("propagatedBuildInputs")), NixList(parts))                       => //println(s"wPropagatedBuildInputs=`${e}`")
+                                                                                                                                                                                           Some(WithToken(e, parts.toList.map{case x:Apply => "("+source.substring(x.start, x.end)+")"
+                                                                                                                                                                                                                              case x       =>     source.substring(x.start, x.end) }))
+                                                                                                  case e@ KV(Seq(Ident("propagatedBuildInputs")), _             )                       => ???
+                                                                                                                                                                                                                                                                       } getOrElse None
+  val wBuildInputs:           Option[WithToken[List[String]]] = inner        .parts.collectFirst{ case e@ KV(Seq(Ident("buildInputs"          )), NixList(parts))                       => //println(s"wBuildInputs=`${parts.toList.map(x => source.substring(x.start, x.end))}`")
+                                                                                                                                                                                           Some(WithToken(e, parts.toList.map{case x:Apply => "("+source.substring(x.start, x.end)+")"
+                                                                                                                                                                                                                              case x       =>     source.substring(x.start, x.end) }))
+                                                                                                  case e@ KV(Seq(Ident("buildInputs"          )), _             )                       => ???
+                                                                                                                                                                                                                                                                       } getOrElse None
+  val wDoCheck:               Option[WithToken[      String]] = inner        .parts.collectFirst{ case e@ KV(Seq(Ident("doCheck"              )), _             )                       => //println(s"wDoCheck=`${source.substring(e.start, e.end)}`")
+                                                                                                                                                                                                   Some(WithToken(e,                              source.substring(e.start, e.end)  )) } getOrElse None
+  //println(s"nixpkgsName=$nixpkgsName wBuildInputs=$wBuildInputs inner=$inner")
+
+  def pname   = wPname.x
+  def version = wVersion.x
+  def url     = wUrl.x
+
+  def copy( builder:               String
+          , pnameString:           String
+          , versionString:         String
+          , url:                   String
+          , sha256:                SHA256
+          , doCheckOverride:       Option[(Boolean, /*comment*/String)]
+          , buildInputs:           List[String]
+          , propagatedBuildInputs: List[String]
+          , licenses:              Set[License]
+          ): BuildPerlPackageBlock = {
+    case class Patch(start: Int, end: Int, value: String)
+    val patches = new collection.mutable.ArrayBuffer[Patch]
+
+    patches += Patch(vBuilder.start,   vBuilder.end,   builder)
+    patches += Patch(wPname.t.start,   wPname.t.end,   s"\042${pnameString}\042")
+    patches += Patch(wVersion.t.start, wVersion.t.end, s"\042${versionString}\042")
+    patches += Patch(wUrl.t.start,     wUrl.t.end,     s"\042${url}\042")
+    patches += Patch(wSha256.t.start,  wSha256.t.end,  (wSha256.t.end-wSha256.t.start) match {
+                                                         case 66 => s"\042${sha256.base16}\042"
+                                                         case 54 => s"\042${sha256.base32}\042"
+                                                       })
+
+    (wDoCheck, doCheckOverride) match {
+      case (_,                                 None                  ) => // keep unchanged
+      case (None,                              Some((false, comment))) => // add `doCheck = false`
+                                                                          patches += Patch(inner.end-1, inner.end-1, s"  doCheck = false; /* $comment */\n  ")
+      case (Some(WithToken(t, _)),             Some((false, comment))) => // change existing `doCheck` to `false`
+                                                                          patches += Patch(t.start, t.end, s"doCheck = false;")
+      case (None | Some(WithToken(_, "true")), Some((true, _       ))) => // keep unchanged
+      case (Some(WithToken(t, "false")),       Some((true, _       ))) => // change existing `doCheck` to `true` (the default)
+                                                                          patches += Patch(t.start, t.end, "")
+    }
+
+    (wPropagatedBuildInputs, propagatedBuildInputs.nonEmpty) match {
+      case (None                 , false) =>
+      case (None                 , true ) => patches += Patch(inner.end-1, inner.end-1, s"  propagatedBuildInputs = [ ${propagatedBuildInputs mkString " "} ];\n  ")
+      case (Some(WithToken(t, _)), false) => patches += Patch(t.start, t.end, "")
+      case (Some(WithToken(t, _)), true ) => patches += Patch(t.start, t.end, s"propagatedBuildInputs = [ ${propagatedBuildInputs mkString " "} ];")
+    }
+
+    (wBuildInputs, buildInputs.nonEmpty) match {
+      case (None                 , false) =>
+      case (None                 , true ) => patches += Patch(inner.end-1, inner.end-1, s"  buildInputs = [ ${buildInputs mkString " "} ];\n  ")
+      case (Some(WithToken(t, _)), false) => patches += Patch(t.start, t.end, "")
+      case (Some(WithToken(t, _)), true ) => patches += Patch(t.start, t.end, s"buildInputs = [ ${buildInputs mkString " "} ];")
+    }
+
+//  (this.licenses, licenses.nonEmpty) match {
+//    case (None   , false) =>
+//    case (None   , true ) => // ???: insert licenses which were absent
+//    case (Some(_), false) => // ???: remove licenses which were present
+//    case (Some(_), true ) => // ???: replace existing license?
+//                             //s = """(?s) license\s*=\s*(with[^;]+;\s*)[^;]+;""".r.replaceAllIn(s, s" license = with stdenv.lib.licenses; [ ${licenses mkString " "} ];")
+//  }
+
+    var s = source
+    for (p <- patches.sortBy(-_.start)) {
+      s = s.substring(0, p.start) + p.value + s.substring(p.end)
+    }
+    s = s.replaceAll(" +\n+", "\n")//.replaceAll("\n+", "\n")
+    //println(s"s=[$s]")
+    BuildPerlPackageBlock.fromString(s)
+  }
+}
+
+object BuildPerlPackageBlock {
+  def fromString(source: String): BuildPerlPackageBlock = Expr.attrentryFromString(source) match {
+    case fastparse.Parsed.Success(KV(Seq(Ident(nixpkgsName)),         ast @ Apply(Val("buildPerlPackage"|"buildPerlModule"),_) ), _) => new BuildPerlPackageBlock(nixpkgsName, source, ast)
+    case fastparse.Parsed.Success(KV(Seq(Ident(nixpkgsName)), LetIn(_,ast @ Apply(Val("buildPerlPackage"|"buildPerlModule"),_))), _) => new BuildPerlPackageBlock(nixpkgsName, source, ast)
+    case e                                                                                                                           => throw new RuntimeException(s"BuildPerlPackageBlock.fromString($source) = $e")
+  }
+}
+
+
 
 class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
-  // a typical code block in `perl-packages.nix`
-  case class BuildPerlPackageBlock(source: String) {
-    val nixpkgsName:                        String   =                   """(?s)^ {1,2}(\S+)"""                .r.findFirstMatchIn(source).get.group(1)
-    val pnameString:                        String   =                   """(?s)pname\s*=\s*"([^"]+)";"""      .r.findFirstMatchIn(source).get.group(1)
-    val versionString:                      String   =                   """(?s)version\s*=\s*"([^"]+)";"""    .r.findFirstMatchIn(source).get.group(1)
-//  val pnameAndVersion:             Option[String]  =                   """(?s) name\s*=\s*"([^"]+)";"""      .r.findFirstMatchIn(source).map(_ group 1)
-    val url:                                String   = /*Try { */        """(?s)url\s*=\s*"?([^";]+)"?;"""     .r.findFirstMatchIn(source).get.group(1) /*} getOrElse {  println(source); ??? }*/
-    val sha256:                             SHA256   = SHA256 fromString """(?s)sha256\s*=\s*"([a-z0-9]+)";""" .r.findFirstMatchIn(source).get.group(1)
-    val resolvedPnameAndVersion:            String   = s"$pnameString-$versionString"
-    val resolvedUrl:                        String   = url.replace("${version}", versionString)
-    val propagatedBuildInputs: Option[Array[String]] = """(?s)propagatedBuildInputs\s*=\s*\[([^]]*)\]"""       .r.findFirstMatchIn(source).map(m => """\([^)]+\)|\S+""".r.findAllIn(m.group(1)).toArray)
-    val buildInputs:           Option[Array[String]] = """(?s)buildInputs\s*=\s*\[([^]]*)\]"""                 .r.findFirstMatchIn(source).map(m => """\([^)]+\)|\S+""".r.findAllIn(m.group(1)).toArray)
-    val licenses:              Option[Array[String]] = """(?s)license\s*=\s*(with[^;]+;\s*)\[([^]]*)\]"""      .r.findFirstMatchIn(source).map(_ group 1 split "\\s+")
-    val doCheck:                     Option[String]  =                   """(?s)doCheck\s*=\s*([^;]+);"""      .r.findFirstMatchIn(source).map(_ group 1)
-
-    val (pname, version) = (Name(pnameString), Version(versionString))
-
-    def copy( builder:               String
-            , pnameString:           String
-            , versionString:         String
-//          , pnameAndVersion:       String
-            , url:                   String
-            , sha256:                SHA256
-            , doCheckOverride:       Option[(Boolean, /*comment*/String)]
-            , buildInputs:           Traversable[String]
-            , propagatedBuildInputs: Traversable[String]
-            , licenses:              Traversable[License]
-            ): BuildPerlPackageBlock = {
-      var s = source
-      s = """\bbuildPerl(Package|Module)\b"""  .r.replaceAllIn(s, builder)
-      s = """(?s)pname\s*=\s*"[^"]+";"""       .r.replaceAllIn(s, s"pname = \042${pnameString}\042;")
-      s = """(?s)version\s*=\s*"[^"]+";"""     .r.replaceAllIn(s, s"version = \042${versionString}\042;")
-
-//    if (nameAndVersion != new BuildPerlPackageBlock(s).resolvedNameAndVersion)
-//      s = """(?s)name\s*=\s*"[^"]+";"""         .r.replaceAllIn(s, s"name = \042${nameAndVersion}\042;")
-
-      if (url != new BuildPerlPackageBlock(s).resolvedUrl)
-        s = """(?s)url\s*=\s*"?([^";]+)"?;"""     .r.replaceAllIn(s, s"""url = "${url}";""")
-
-      s = """(?s)sha256\s*=\s*"([a-z0-9]+)";""" .r.replaceSomeIn(s, m => m.group(1).length match {
-                                                                           case 64 => Some(s"sha256 = \042${sha256.base16}\042;")
-                                                                           case 52 => Some(s"sha256 = \042${sha256.base32}\042;")
-                                                                         })
-      (this.doCheck, doCheckOverride) match {
-        case (_,                   None                  ) => // keep unchanged
-        case (None,                Some((false, comment))) => val a = s.split('\n')
-                                                              s = (a.init :+ s"    doCheck = false; /* $comment */" :+ a.last) mkString "\n"
-        case (_,                   Some((false, comment))) => s =   """(?s) doCheck\s*=\s*[^;]+;(\s*/\*.+?\*/)?""".r.replaceAllIn(s, s" doCheck = false; /* $comment */")
-        case (None | Some("true"), Some((true, _       ))) => // keep unchanged
-        case (Some("false"),       Some((true, _       ))) => s = """(?s)\s+doCheck\s*=\s*[^;]+;(\s*/\*.+?\*/)?""".r.replaceAllIn(s, "")
-      }
-
-      (this.propagatedBuildInputs, propagatedBuildInputs.nonEmpty) match {
-        case (None   , false) =>
-        case (None   , true ) => val a = s.split('\n')
-                                 s = (a.init :+ s"    propagatedBuildInputs = [ ${propagatedBuildInputs mkString " "} ];" :+ a.last) mkString "\n"
-        case (Some(_), false) => s = """(?s)\s+propagatedBuildInputs\s*=\s*((?:\([^)]+\)|[^;])+);""".r.replaceAllIn(s, "")
-        case (Some(_), true ) => s = """(?s) propagatedBuildInputs\s*=\s*(?:\([^)]+\)|[^;])+;""".r.replaceAllIn(s, s" propagatedBuildInputs = [ ${propagatedBuildInputs mkString " "} ];")
-      }
-
-      (this.buildInputs, buildInputs.nonEmpty) match {
-        case (None   , false) =>
-        case (None   , true ) => val a = s.split('\n')
-                               s = (a.init :+ s"    buildInputs = [ ${buildInputs mkString " "} ];" :+ a.last) mkString "\n"
-        case (Some(_), false) => s = """(?s)\s+buildInputs\s*=\s*((?:\([^)]+\)|[^;])+);""".r.replaceAllIn(s, "")
-        case (Some(_), true ) => s = """(?s) buildInputs\s*=\s*(?:\([^)]+\)|[^;])+;""".r.replaceAllIn(s, s" buildInputs = [ ${buildInputs mkString " "} ];")
-      }
-
-      (this.licenses, licenses.nonEmpty) match {
-        case (None   , false) =>
-        case (None   , true ) => // ???: insert licenses which were absent
-        case (Some(_), false) => // ???: remove licenses which were present
-        case (Some(_), true ) => // ???: replace existing license?
-                                 //s = """(?s) license\s*=\s*(with[^;]+;\s*)[^;]+;""".r.replaceAllIn(s, s" license = with stdenv.lib.licenses; [ ${licenses mkString " "} ];")
-      }
-
-      // FIXME: update homepage
-      new BuildPerlPackageBlock(s)
-    }
-
-    def updatedTo(cp: CpanPackage): BuildPerlPackageBlock =
-      copy( builder               = if (cp.isModule) "buildPerlModule" else "buildPerlPackage"
-          , pnameString           = cp.pname.toString
-          , versionString         = cp.version.toString stripPrefix "v"
-//        , pnameAndVersion       = s"${cp.pname}-${cp.version.toString stripPrefix "v"}"
-          , url                   = s"mirror://cpan/authors/id/${cp.path}"
-          , sha256                = cp.sha256
-          , doCheckOverride       = CpanErrata.doCheckOverride get cp.pname
-          , propagatedBuildInputs = propagatedBuildInputs.toList.flatten.filter(_ contains "pkgs.") ++ (runtimeDeps(cp) -- runtimeDeps(cp).flatMap(deepRuntimeDeps _)).map(escapedNixifiedName).toArray.sorted
-          , buildInputs           =           buildInputs.toList.flatten.filter(_ contains "pkgs.") ++ (buildDeps(cp)   -- deepRuntimeDeps(cp)                       ).map(escapedNixifiedName).toArray.sorted
-          , licenses              = cp.meta.licenses
-          )
-
-    def this(cp: CpanPackage) = this {
-      val sb = new java.lang.StringBuilder
-      sb append s"""  ${cp.suggestedNixpkgsName} = ${if (cp.isModule) "buildPerlModule" else "buildPerlPackage"} {\n"""
-      sb append s"""    pname = "${cp.pname}";\n"""
-      sb append s"""    version = "${cp.version}";\n"""
-      sb append s"""    src = fetchurl {\n"""
-      sb append s"""      url = "mirror://cpan/authors/id/${cp.path}";\n"""
-      sb append s"""      sha256 = "${cp.sha256.base32}";\n"""
-      sb append s"""    };\n"""
-      (runtimeDeps(cp) -- runtimeDeps(cp).flatMap(deepRuntimeDeps _)).toArray match {
-        case Array() =>
-        case a       => sb append s"""    propagatedBuildInputs = [ ${a.map(escapedNixifiedName).sorted mkString " "} ];\n"""
-      }
-      (buildDeps(cp)   -- deepRuntimeDeps(cp)                       ).toArray match {
-        case Array() =>
-        case a       => sb append s"""    buildInputs = [ ${a.map(escapedNixifiedName).sorted mkString " "} ];\n"""
-      }
-      CpanErrata.doCheckOverride.get(cp.pname) match {
-        case Some((false, comment)) => sb append s"""      doCheck = false; /* $comment */\n"""
-        case Some((true, _)) | None =>
-      }
-      sb append s"""    meta = {\n"""
-      cp.meta.description foreach { text =>
-        sb append s"""      description = "${text}";\n"""
-      }
-      if (cp.meta.licenses.nonEmpty) {
-        sb append s"""      license = with stdenv.lib.licenses; [ ${cp.meta.licenses mkString " "} ];\n"""
-      }
-      cp.meta.homepage match {
-        case Some(hp) if !hp.matches("""https?://metacpan\.org/.+""") =>
-          sb append s"""      homepage = "${cp.meta.homepage.get}";\n"""
-        case _                                                        =>
-      }
-      sb append s"""    };\n"""
-      sb append s"""  };\n"""
-      sb.toString
-    }
-  }
-
-
-  var `perl-packages.nix` = scala.io.Source.fromFile(new File(repopath, "/pkgs/top-level/perl-packages.nix")).mkString
+  var `perl-packages.nix` = FileUtils.readFileToString(new File(repopath, "/pkgs/top-level/perl-packages.nix"), "UTF-8")
   var buildPerlPackageBlocks = collection.immutable.TreeMap.empty[String, BuildPerlPackageBlock]
-  for (source <- """(?s) {1,2}\S+\s*=\s*(let\b.+?\bin\s*)?buildPerl(Package|Module) (rec )?\{.+?\n {1,3}\};\n""".r.findAllIn(`perl-packages.nix`);
-       bppb <- Try(new BuildPerlPackageBlock(source)) match { case Success(b) => Success(b)
-                                                              case Failure(e) => //println(source); e.printStackTrace();
-                                                                                 Failure(e)
-                                                            }
-      ) {
-    buildPerlPackageBlocks += bppb.nixpkgsName -> bppb
+
+  val fastparse.Parsed.Success(x, _) = Expr.fromString(`perl-packages.nix`)
+  Expr.traverse(x::Nil) {
+    case (outer @ KV(Seq(Ident(nixpkgsName)),         Apply(Val("buildPerlPackage"|"buildPerlModule"),inner:Attrs)) )::_ => Try(BuildPerlPackageBlock.fromString(`perl-packages.nix`.substring(outer.start, outer.end))) match {
+                                                                                                                              case Success(b) => buildPerlPackageBlocks += nixpkgsName -> (b)
+                                                                                                                              case Failure(e) => println(RED+e+RESET)
+                                                                                                                            }
+    case (outer @ KV(Seq(Ident(nixpkgsName)), LetIn(_,Apply(Val("buildPerlPackage"|"buildPerlModule"),inner:Attrs))))::_ => Try(BuildPerlPackageBlock.fromString(`perl-packages.nix`.substring(outer.start, outer.end))) match {
+                                                                                                                              case Success(b) => buildPerlPackageBlocks += nixpkgsName -> (b)
+                                                                                                                              case Failure(e) => println(RED+e+RESET)
+                                                                                                                            }
+    case _                                                                                                               =>
   }
 
   def nixifiedName(cp: CpanPackage) = buildPerlPackageBlocks.filter(_._2.pname == cp.pname).toList match {
@@ -1029,11 +1020,63 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
   })
 
 
+  private def updatedTo(b: BuildPerlPackageBlock, cp: CpanPackage): BuildPerlPackageBlock = {
+//  println(s"`${b.source}`.updatedTo($cp)")
+    b.copy( builder               = if (cp.isModule) "buildPerlModule" else "buildPerlPackage"
+        , pnameString           = cp.pname.toString
+        , versionString         = cp.version.toString stripPrefix "v"
+        , url                   = s"mirror://cpan/authors/id/${cp.path}"
+        , sha256                = cp.sha256
+        , doCheckOverride       = CpanErrata.doCheckOverride get cp.pname
+        , propagatedBuildInputs = b.wPropagatedBuildInputs.toList.flatMap(_.x).filter(name => name.contains("pkgs.") || name=="shortenPerlShebang") ++ (runtimeDeps(cp) -- runtimeDeps(cp).flatMap(deepRuntimeDeps _)).map(escapedNixifiedName).toArray.sorted
+        , buildInputs           =           b.wBuildInputs.toList.flatMap(_.x).filter(name => name.contains("pkgs.") || name=="shortenPerlShebang") ++ (buildDeps(cp)   -- deepRuntimeDeps(cp)                       ).map(escapedNixifiedName).toArray.sorted
+        , licenses              = cp.meta.licenses
+        )
+  }
+
+  def fromCpanPackage(cp: CpanPackage): BuildPerlPackageBlock = {
+    val sb = new java.lang.StringBuilder
+    sb append s"""  ${cp.suggestedNixpkgsName} = ${if (cp.isModule) "buildPerlModule" else "buildPerlPackage"} {\n"""
+    sb append s"""    pname = "${cp.pname}";\n"""
+    sb append s"""    version = "${cp.version}";\n"""
+    sb append s"""    src = fetchurl {\n"""
+    sb append s"""      url = "mirror://cpan/authors/id/${cp.path}";\n"""
+    sb append s"""      sha256 = "${cp.sha256.base32}";\n"""
+    sb append s"""    };\n"""
+    (runtimeDeps(cp) -- runtimeDeps(cp).flatMap(deepRuntimeDeps _)).toArray match {
+      case Array() =>
+      case a       => sb append s"""    propagatedBuildInputs = [ ${a.map(escapedNixifiedName).sorted mkString " "} ];\n"""
+    }
+    (buildDeps(cp)   -- deepRuntimeDeps(cp)                       ).toArray match {
+      case Array() =>
+      case a       => sb append s"""    buildInputs = [ ${a.map(escapedNixifiedName).sorted mkString " "} ];\n"""
+    }
+    CpanErrata.doCheckOverride.get(cp.pname) match {
+      case Some((false, comment)) => sb append s"""      doCheck = false; /* $comment */\n"""
+      case Some((true, _)) | None =>
+    }
+    sb append s"""    meta = {\n"""
+    cp.meta.description foreach { text =>
+      sb append s"""      description = "${text}";\n"""
+    }
+    if (cp.meta.licenses.nonEmpty) {
+      sb append s"""      license = with stdenv.lib.licenses; [ ${cp.meta.licenses mkString " "} ];\n"""
+    }
+    cp.meta.homepage match {
+      case Some(hp) if !hp.matches("""https?://metacpan\.org/.+""") =>
+        sb append s"""      homepage = "${cp.meta.homepage.get}";\n"""
+      case _                                                        =>
+    }
+    sb append s"""    };\n"""
+    sb append s"""  };\n"""
+    BuildPerlPackageBlock.fromString(sb.toString)
+  }
+
 
   def prepareCommit(onp: Option[NixPackage], cp: CpanPackage, upgradeDeps: Boolean): Option[String] = {
     allDeps(cp) // to fail earlier if circular deps found
 
-/*
+/**
     // debug print
     println(s"  prepareCommit($onp, $cp)")
     println(allDeps(cp) mkString "\n")
@@ -1048,13 +1091,13 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
     onp match {
       case Some(np) =>
-        buildPerlPackageBlocks find (_._2.resolvedUrl == np.url) match {
+        buildPerlPackageBlocks find (_._2.url == np.url) match {
           case Some((_, block)) =>
             println(s"======================== ${np.pname}: ${np.version} -> ${cp.version}")
             println(block   .source split '\n' map ("< "+_) mkString "\n")
         }
     }
-*/
+**/
 
     def isBuiltInTheOldestSupportedPerl: Boolean = {
       val mods:     Map[Mod, Version]         = Cpan.providedMods(cp)
@@ -1073,10 +1116,10 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
     var newBlock: BuildPerlPackageBlock = null
     onp match {
       case Some(np) =>
-        buildPerlPackageBlocks find (_._2.resolvedUrl == np.url) match {
+        buildPerlPackageBlocks find (_._2.url == np.url) match {
           case Some((_, block)) if isBuiltInTheOldestSupportedPerl =>
             // do mutate `perl-packages.nix`
-            `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null; # part of Perl ${theOldestSupportedPerl.version}""")
+            `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, s"""${block.nixpkgsName} = null; # part of Perl ${theOldestSupportedPerl.perlVersion}""")
 
             val pw = new java.io.PrintWriter(new File(repopath, "/pkgs/top-level/perl-packages.nix"))
             pw write `perl-packages.nix`
@@ -1084,7 +1127,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
 
             return Some(s"perlPackages.${block.nixpkgsName}: removed built-in")
           case Some((_, block)) =>
-            newBlock = block.updatedTo(cp)
+            newBlock = updatedTo(block, cp)
 
             // do mutate `perl-packages.nix`
             buildPerlPackageBlocks = buildPerlPackageBlocks - block.nixpkgsName + (newBlock.nixpkgsName -> newBlock)
@@ -1094,7 +1137,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
             return None
         }
       case None =>
-        newBlock = new BuildPerlPackageBlock(cp)
+        newBlock = fromCpanPackage(cp)
 
         // do mutate `perl-packages.nix`
         buildPerlPackageBlocks = buildPerlPackageBlocks + (newBlock.nixpkgsName -> newBlock)
@@ -1112,7 +1155,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
     val depBlocks: Set[Either[(BuildPerlPackageBlock, CpanPackage), BuildPerlPackageBlock]] =
       allDeps(cp) flatMap { dep =>
         buildPerlPackageBlocks.filter(_._2.pname == dep.pname).toList match {
-          case Nil        => Right(new BuildPerlPackageBlock(dep)) :: Nil // Try(new BuildPerlPackageBlock(dep)).toOption.map(Right(_))
+          case Nil        => Right(fromCpanPackage(dep)) :: Nil // Try(new BuildPerlPackageBlock(dep)).toOption.map(Right(_))
           case depblocks  => //if (depblocks.length>1) println("depblocks:"::depblocks mkString "\n")
                              depblocks map {case (_, bppb) => Left(bppb->dep)}
         }
@@ -1123,7 +1166,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
     println(newBlock.source split '\n' map ("> "+_) mkString "\n")
     depBlocks foreach {
       case Left((bppb, dep)) => // upgrade/cleanup existing dep
-        val newBppb = bppb.updatedTo(dep)
+        val newBppb = updatedTo(bppb, dep)
         if (bppb.source.trim != newBppb.source.trim) {
           println(bppb   .source split '\n' map ("< "+_) mkString "\n")
           println(newBppb.source split '\n' map ("> "+_) mkString "\n")
@@ -1136,7 +1179,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
     depBlocks foreach {
       case Left((bppb, dep)) => // upgrade/cleanup existing dep
         if (upgradeDeps) {
-          val newBppb = bppb.updatedTo(dep)
+          val newBppb = updatedTo(bppb, dep)
           if (bppb.source.trim != newBppb.source.trim) {
             if (bppb.version != newBppb.version)
               message ::= s"perlPackages.${bppb.nixpkgsName}: ${bppb.version} -> ${newBppb.version}"
@@ -1205,7 +1248,7 @@ object Cpan2Nix {
   val doTestBuild: List[Worker] = // builder_AARCH64 ::
                                   // builder_AARCH32 ::
                                   // builder_I686    ::
-                                     builder_X86_64  ::
+                                  // builder_X86_64  ::
                                   Nil
 
 
@@ -1217,17 +1260,20 @@ object Cpan2Nix {
         val repopath: File = new File(path)
 
         if (doCheckout) {
-//        if (!repopath.exists) {
-//          require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
-//        } else {
-//          require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
+          if (!repopath.exists) {
+            require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
+          } else {
+            require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
 //          require(Process("git" :: "fetch" :: "origin" :: "master"  :: Nil, cwd = repopath).! == 0)
-//        }
+          }
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/staging"                       :: Nil, cwd = repopath).! == 0)
 //        require(Process("git" :: "cherry-pick"             :: "df55a4aa20c813625bd9bbf46ffb7d77dd089bba"     :: Nil, cwd = repopath).! == 0)
 //        require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/master"                        :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick"             :: "d34fb0a99d493d3c0cb19e4825869cf437bf3916"     :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick"             :: "4a6de80c212eed02dc320f077032704c92afc216"     :: Nil, cwd = repopath).! == 0)
+
           require(Process("git" :: "branch"   :: "-f"        :: branchName :: "HEAD"                           :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout" ::                branchName                                     :: Nil, cwd = repopath).! == 0)
         }
@@ -1285,7 +1331,7 @@ object Cpan2Nix {
           }
         })
 
-        val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl530", version="5.30")
+        val theOldestSupportedPerl = new PerlDerivation(repopath, name="perl530", perlVersion="5.30.3")
         val pullRequester = new PullRequester(repopath, theOldestSupportedPerl)
 
         // compare results of evaluation pkgs.perlPackages (nixPkgs.allPackages) and parsing of perl-packages.nix (pullRequester.buildPerlPackageBlocks)
@@ -1324,7 +1370,7 @@ object Cpan2Nix {
         sys exit 1
 **/
         if (doUpgrade) {
-/*
+/**/
           val toupdate = nixPkgs.allPackages sortBy { case np if np.pname.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
                                                       case np if np.pname.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
                                                       case np                                                 => canUpgrade(np) match {
@@ -1332,8 +1378,8 @@ object Cpan2Nix {
                                                                                                                    case None     => (20, 0)
                                                                                                                  }
                                                     }
-*/
-          val toupdate = nixPkgs.allPackages filter (_.pname == Name("Math-BigInt-Lite"))
+/**/
+//        val toupdate = nixPkgs.allPackages filter (np => np.pname == Name("SVN-Simple"))
 
 
           for (np      <- toupdate;
@@ -1347,6 +1393,7 @@ object Cpan2Nix {
           }
 
 //        require(Process("git" :: "push" :: "-f" :: "git@github.com:/volth/nixpkgs"                     :: Nil, cwd = repopath).! == 0)
+          require(Process("git" :: "cherry-pick"             :: "9bb5f206c2981b61fb70d7d6df8675d07b72acd8"     :: Nil, cwd = repopath).! == 0)
         }
 
 
@@ -1362,8 +1409,7 @@ object Cpan2Nix {
                             |   lib.concatMap ({pkgs, dotperl}: [
                             |     pkgs.nix-serve
                             |   # pkgs.hydra
-                            |     pkgs.perl.pkgs.MathBigIntLite
-                            | /*  (dotperl pkgs).pkgs.MooseXAttributeHelpers
+                            |     (dotperl pkgs).pkgs.MooseXAttributeHelpers
                             |     ((dotperl pkgs).withPackages(p: lib.filter
                             |                                  (x: (x != null) && (lib.isDerivation x) && x.meta.available)
                             |                                  [
@@ -1376,17 +1422,17 @@ object Cpan2Nix {
                                                                     } mkString " "
                                                                  }
                             |                                  ]
-                            |                            )) */
+                            |                            ))
                             |   ] ++ lib.optionals pkgs.stdenv.is64bit [
                             |""".stripMargin +
          (worker.system match {
             case "x86_64-linux" =>
                         s"""|
-                            | #   ((dotperl pkgs.pkgsCross.raspberryPi            ).withPackages(p: [p.LWP p.XMLParser]))
-                            | #   ((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).withPackages(p: [p.LWP p.XMLParser]))
-                            | #   ((dotperl pkgs.pkgsCross.aarch64-multiplatform  ).withPackages(p: [p.LWP p.XMLParser]))
-                            | #  #((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).pkgs.ModuleBuild)
-                            | #   ((dotperl pkgs.pkgsMusl                         ).withPackages(p: [p.LWP p.XMLParser]))
+                            |     ((dotperl pkgs.pkgsCross.raspberryPi            ).withPackages(p: [p.LWP p.XMLParser]))
+                            |     ((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).withPackages(p: [p.LWP p.XMLParser]))
+                            |     ((dotperl pkgs.pkgsCross.aarch64-multiplatform  ).withPackages(p: [p.LWP p.XMLParser]))
+                            |    #((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).pkgs.ModuleBuild)
+                            |     ((dotperl pkgs.pkgsMusl                         ).withPackages(p: [p.LWP p.XMLParser]))
                             |""".stripMargin
             case "aarch64-linux" =>
                         s"""|

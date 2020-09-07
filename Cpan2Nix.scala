@@ -704,11 +704,9 @@ object CpanErrata {
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
                                     , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
                                     , CpanPackage fromPath "T/TI/TINITA/Inline-0.83.tar.gz"                          // prevent downgrade to 0.82
-                                    , CpanPackage fromPath "P/PJ/PJACKLAM/Math-BigInt-1.999816.tar.gz"               // 1.999817 tests fail
 //                                  , CpanPackage fromPath "I/IS/ISAAC/libapreq2-2.13.tar.gz"                        // error parsing derivation (span2nix fixes sha256 of a patch)
                                     , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
                                     , CpanPackage fromPath "F/FR/FROGGS/SDL-2.548.tar.gz"                            // fails to parse buildInputs
-                                    , CpanPackage fromPath "P/PJ/PJACKLAM/Math-BigInt-Lite-0.18.tar.gz"              // 0.19 tests faled
                                     , CpanPackage fromPath "R/RU/RURBAN/Cpanel-JSON-XS-4.17.tar.gz"                  // 4.18 add many new deps which do fail
                                     )
 
@@ -993,13 +991,15 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
       None
     else
       theOldestSupportedPerl.versionOf(mod) match {
-        case Some(localver) if version<=localver                      => None
-        case _ if CpanErrata.modsToIgnore.get(mod).exists(_(version)) => None
+        case Some(localver) if version<=localver                      => //println(s"module $mod version $version is in theOldestSupportedPerl")
+                                                                         None
+        case _ if CpanErrata.modsToIgnore.get(mod).exists(_(version)) => //println(s"module $mod version $version ignored")
+                                                                         None
         case _                                                        =>
           Cpan.byMod(mod).toList match {
-            case Nil                                                                    => throw new RuntimeException(s"mod `$mod' not found, maybe ${Cpan.byMod.keys filter (_.toString.toUpperCase.replaceAll("[:-]","") == mod.toString.toUpperCase.replaceAll("[:-]","")) mkString " "}");
+            case Nil                                                                     => throw new RuntimeException(s"mod `$mod' not found, maybe ${Cpan.byMod.keys filter (_.toString.toUpperCase.replaceAll("[:-]","") == mod.toString.toUpperCase.replaceAll("[:-]","")) mkString " "}");
             case cp::Nil if cp.pname.toString equalsIgnoreCase "perl"                    => None
-            case cp::Nil if CpanErrata.namesToIgnore.get(cp.pname).exists(_(cp.version)) => //println(s"package ${cp} ignored")
+            case cp::Nil if CpanErrata.namesToIgnore.get(cp.pname).exists(_(cp.version)) => //println(s"package $cp ignored")
                                                                                             None
             case cp::Nil                                                                 => CpanErrata.pinnedPackages.find(_.pname == cp.pname) match {
                                                                                               case Some(pinnedcp) => Some(pinnedcp)
@@ -1045,6 +1045,15 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
     println(cp.meta.runtimeMODs mkString "\n")
     println(s"  runtimeDeps:")
     println(runtimeDeps(cp) mkString "\n")
+
+    onp match {
+      case Some(np) =>
+        buildPerlPackageBlocks find (_._2.resolvedUrl == np.url) match {
+          case Some((_, block)) =>
+            println(s"======================== ${np.pname}: ${np.version} -> ${cp.version}")
+            println(block   .source split '\n' map ("< "+_) mkString "\n")
+        }
+    }
 */
 
     def isBuiltInTheOldestSupportedPerl: Boolean = {
@@ -1080,7 +1089,7 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
             // do mutate `perl-packages.nix`
             buildPerlPackageBlocks = buildPerlPackageBlocks - block.nixpkgsName + (newBlock.nixpkgsName -> newBlock)
             `perl-packages.nix` = `perl-packages.nix`.replace(block.source.trim, newBlock.source.trim)
-          case None => //???
+          case None =>
             System.err.println(s"$np->$cp not found in perl-packages.nix")
             return None
         }
@@ -1110,20 +1119,18 @@ class PullRequester(repopath: File, theOldestSupportedPerl: PerlDerivation) {
       }
 
 /*
-        // debug print
-        println(s"======================== ${np.name}: ${np.version} -> ${cp.version}")
-        println(block   .source split '\n' map ("< "+_) mkString "\n")
-        println(newBlock.source split '\n' map ("> "+_) mkString "\n")
-        depBlocks foreach {
-          case Left((bppb, dep)) => // upgrade/cleanup existing dep
-            val newBppb = bppb.updatedTo(dep)
-            if (bppb.source.trim != newBppb.source.trim) {
-              println(bppb   .source split '\n' map ("< "+_) mkString "\n")
-              println(newBppb.source split '\n' map ("> "+_) mkString "\n")
-            }
-          case Right(newBppb)       => // insert new dep
-            println(newBppb.source split '\n' map ("+ "+_) mkString "\n")
+    // debug print
+    println(newBlock.source split '\n' map ("> "+_) mkString "\n")
+    depBlocks foreach {
+      case Left((bppb, dep)) => // upgrade/cleanup existing dep
+        val newBppb = bppb.updatedTo(dep)
+        if (bppb.source.trim != newBppb.source.trim) {
+          println(bppb   .source split '\n' map ("< "+_) mkString "\n")
+          println(newBppb.source split '\n' map ("> "+_) mkString "\n")
         }
+      case Right(newBppb)       => // insert new dep
+        println(newBppb.source split '\n' map ("+ "+_) mkString "\n")
+    }
 */
 
     depBlocks foreach {
@@ -1185,20 +1192,20 @@ case class Worker(system: String, concurrency: Int, location: Worker.Location) {
 object Cpan2Nix {
 //val builder_X86_64  = Worker("x86_64-linux",   12, Worker.Local)
 //val builder_I686    = Worker("i686-linux",     12, Worker.Local)
-  val builder_X86_64  = Worker("x86_64-linux",   12, Worker.Remote("root",     "x13.lan",                "-p922" :: Nil))
-  val builder_I686    = Worker("i686-linux",     12, Worker.Remote("root",     "x13.lan",                "-p922" :: Nil))
-//val builder_DARWIN  = Worker("x86_64-darwin",   4, Worker.Remote("user",     "172.16.224.2",                      Nil))
-  val builder_AARCH32 = Worker("armv7l-linux",  100, Worker.Remote("volth",    "aarch64.nixos.community",           Nil))
-  val builder_AARCH64 = Worker("aarch64-linux", 100, Worker.Remote("volth",    "aarch64.nixos.community",           Nil))
+  val builder_X86_64  = Worker("x86_64-linux",   12, Worker.Remote("root",     "x13.lan",                 Nil))
+  val builder_I686    = Worker("i686-linux",     12, Worker.Remote("root",     "x13.lan",                 Nil))
+//val builder_DARWIN  = Worker("x86_64-darwin",   4, Worker.Remote("user",     "172.16.224.2",            Nil))
+  val builder_AARCH32 = Worker("armv7l-linux",  100, Worker.Remote("volth",    "aarch64.nixos.community", Nil))
+  val builder_AARCH64 = Worker("aarch64-linux", 100, Worker.Remote("volth",    "aarch64.nixos.community", Nil))
 
   // todo: command-line switches
-  val doCheckout  = !true
+  val doCheckout  = true
   val doInsert    = /*"Net-Amazon-EC2" ::*/ Nil
-  val doUpgrade   = !true
+  val doUpgrade   = true
   val doTestBuild: List[Worker] = // builder_AARCH64 ::
                                   // builder_AARCH32 ::
                                   // builder_I686    ::
-                                  // builder_X86_64  ::
+                                     builder_X86_64  ::
                                   Nil
 
 
@@ -1210,12 +1217,12 @@ object Cpan2Nix {
         val repopath: File = new File(path)
 
         if (doCheckout) {
-          if (!repopath.exists) {
-            require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
-          } else {
-            require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
-            require(Process("git" :: "fetch" :: "origin" :: "master"  :: Nil, cwd = repopath).! == 0)
-          }
+//        if (!repopath.exists) {
+//          require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
+//        } else {
+//          require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
+//          require(Process("git" :: "fetch" :: "origin" :: "master"  :: Nil, cwd = repopath).! == 0)
+//        }
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/staging"                       :: Nil, cwd = repopath).! == 0)
@@ -1317,6 +1324,7 @@ object Cpan2Nix {
         sys exit 1
 **/
         if (doUpgrade) {
+/*
           val toupdate = nixPkgs.allPackages sortBy { case np if np.pname.toString equalsIgnoreCase "XML-SAX" => (0, 0)                  // XML-SAX first, it is an indirect dependency of many others via `pkgs.docbook'
                                                       case np if np.pname.toString equalsIgnoreCase "JSON"    => (1, 0)                  // JSON second, others depends on it via `pkgs.heimdal'
                                                       case np                                                 => canUpgrade(np) match {
@@ -1324,9 +1332,9 @@ object Cpan2Nix {
                                                                                                                    case None     => (20, 0)
                                                                                                                  }
                                                     }
-/*
-          val toupdate = nixPkgs.allPackages filter (_.name == Name("Catalyst-Runtime"))
 */
+          val toupdate = nixPkgs.allPackages filter (_.pname == Name("Math-BigInt-Lite"))
+
 
           for (np      <- toupdate;
                cp      <- canUpgrade(np);
@@ -1354,7 +1362,8 @@ object Cpan2Nix {
                             |   lib.concatMap ({pkgs, dotperl}: [
                             |     pkgs.nix-serve
                             |   # pkgs.hydra
-                            |     (dotperl pkgs).pkgs.MooseXAttributeHelpers
+                            |     pkgs.perl.pkgs.MathBigIntLite
+                            | /*  (dotperl pkgs).pkgs.MooseXAttributeHelpers
                             |     ((dotperl pkgs).withPackages(p: lib.filter
                             |                                  (x: (x != null) && (lib.isDerivation x) && x.meta.available)
                             |                                  [
@@ -1367,17 +1376,17 @@ object Cpan2Nix {
                                                                     } mkString " "
                                                                  }
                             |                                  ]
-                            |                            ))
+                            |                            )) */
                             |   ] ++ lib.optionals pkgs.stdenv.is64bit [
                             |""".stripMargin +
          (worker.system match {
             case "x86_64-linux" =>
                         s"""|
-                            |     ((dotperl pkgs.pkgsCross.raspberryPi            ).withPackages(p: [p.LWP p.XMLParser]))
-                            |     ((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).withPackages(p: [p.LWP p.XMLParser]))
-                            |     ((dotperl pkgs.pkgsCross.aarch64-multiplatform  ).withPackages(p: [p.LWP p.XMLParser]))
-                            |    #((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).pkgs.ModuleBuild)
-                            |     ((dotperl pkgs.pkgsMusl                         ).withPackages(p: [p.LWP p.XMLParser]))
+                            | #   ((dotperl pkgs.pkgsCross.raspberryPi            ).withPackages(p: [p.LWP p.XMLParser]))
+                            | #   ((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).withPackages(p: [p.LWP p.XMLParser]))
+                            | #   ((dotperl pkgs.pkgsCross.aarch64-multiplatform  ).withPackages(p: [p.LWP p.XMLParser]))
+                            | #  #((dotperl pkgs.pkgsCross.armv7l-hf-multiplatform).pkgs.ModuleBuild)
+                            | #   ((dotperl pkgs.pkgsMusl                         ).withPackages(p: [p.LWP p.XMLParser]))
                             |""".stripMargin
             case "aarch64-linux" =>
                         s"""|

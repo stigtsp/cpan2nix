@@ -525,7 +525,7 @@ object CpanErrata {
                                     , Name("Archive-Zip"                             ) -> Map( Mod("Test::MockModule")                 -> Version("0"))
                                     , Name("Catalyst-Controller-POD"                 ) -> Map( Mod("inc::Module::Install")             -> Version("0"))
                                     , Name("Catalyst-Runtime"                        ) -> Map( Mod("Type::Tiny")                       -> Version("0"))
-//                                  , Name("Catalyst-Authentication-Store-DBIx-Class") -> Map( Mod("Test::Warn")                       -> Version("0"))
+                                    , Name("Catalyst-Authentication-Store-DBIx-Class") -> Map( Mod("Test::Warn")                       -> Version("0"))
                                     , Name("Catalyst-Authentication-Store-Htpasswd"  ) -> Map( Mod("Test::WWW::Mechanize")             -> Version("0")
                                                                                              , Mod("Test::LongString")                 -> Version("0"))
                                     , Name("Catalyst-Controller-HTML-FormFu"         ) -> Map( Mod("Test::LongString")                 -> Version("0"))
@@ -718,16 +718,16 @@ object CpanErrata {
   // *** pinned packages
   val pinnedPackages           = Set( CpanPackage fromPath "N/NJ/NJH/MusicBrainz-DiscID-0.03.tar.gz"                 // need to review patchPhase manually
                                     , CpanPackage fromPath "M/MS/MSISK/HTML-TableExtract-2.13.tar.gz"                // 2.15 seems broken
-                                    , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11,4.12 test failed
+                                    , CpanPackage fromPath "R/RR/RRA/podlators-4.10.tar.gz"                          // 4.11,4.12,4.14 test failed
                                     , CpanPackage fromPath "L/LD/LDS/VM-EC2-1.28.tar.gz"                             // prevent downgrade to 1.25
                                     , CpanPackage fromPath "G/GU/GUIDO/libintl-perl-1.31.tar.gz"                     // AppSqitch tries to downgrade to 1.30
 //                                  , CpanPackage fromPath "T/TI/TINITA/Inline-0.83.tar.gz"                          // prevent downgrade to 0.82
                                     , CpanPackage fromPath "N/NA/NANIS/Crypt-SSLeay-0.73_06.tar.gz"                  // newer than in CPAN
 //                                  , CpanPackage fromPath "I/IS/ISAAC/libapreq2-2.13.tar.gz"                        // error parsing derivation (span2nix fixes sha256 of a patch)
                                     , CpanPackage fromPath "G/GA/GAAS/HTTP-Daemon-6.01.tar.gz"                       // newer version depends on Module::Build which fails to cross-compile
-//                                  , CpanPackage fromPath "F/FR/FROGGS/SDL-2.548.tar.gz"                            // fails to parse buildInputs
-                                    , CpanPackage fromPath "R/RU/RURBAN/Cpanel-JSON-XS-4.17.tar.gz"                  // 4.18 add many new deps which do fail
+                                    , CpanPackage fromPath "R/RU/RURBAN/Cpanel-JSON-XS-4.17.tar.gz"                  // 4.21 add many new deps which do fail
                                     , CpanPackage fromPath "S/SH/SHANCOCK/Perl-Tidy-20200110.tar.gz"                 // 20200822 test fails
+                                    , CpanPackage fromPath "R/RI/RIBASUSHI/DBIx-Class-0.082841.tar.gz"               // 0.082842 breaks Catalyst-Authentication-Store-DBIx-Class
                                     )
 
   // *** enforce 'doCheck = false' or 'doCheck = false'
@@ -739,8 +739,6 @@ object CpanErrata {
                                     , Name("RSS-Parser-Lite")                           -> (false, "creates files in HOME")
                                     , Name("B-C")                                       -> (false, "test fails")
                                     , Name("Test-Cmd")                                  -> (false, "test fails")
-//                                  , Name("Tie-Hash-Indexed")                          -> (false, "test fails on some machines")
-                                    , Name("Catalyst-Authentication-Store-DBIx-Class")  -> (false, "test fails")
                                     , Name("Crypt-OpenPGP")                             -> (false, "test fails with 'No random source available!'")
                                     )
 }
@@ -1267,7 +1265,7 @@ object Cpan2Nix {
   val doTestBuild: List[Worker] = // builder_AARCH64 ::
                                   // builder_AARCH32 ::
                                   // builder_I686    ::
-                                  // builder_X86_64  ::
+                                     builder_X86_64  ::
                                   Nil
 
 
@@ -1287,10 +1285,12 @@ object Cpan2Nix {
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/staging"                       :: Nil, cwd = repopath).! == 0)
+
+
 //        require(Process("git" :: "cherry-pick"             :: "df55a4aa20c813625bd9bbf46ffb7d77dd089bba"     :: Nil, cwd = repopath).! == 0)
 //        require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/master"                        :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick"             :: "d34fb0a99d493d3c0cb19e4825869cf437bf3916"     :: Nil, cwd = repopath).! == 0)
-          require(Process("git" :: "cherry-pick"             :: "4a6de80c212eed02dc320f077032704c92afc216"     :: Nil, cwd = repopath).! == 0)
+                 (Process("git" :: "cherry-pick"             :: "d34fb0a99d493d3c0cb19e4825869cf437bf3916"     :: Nil, cwd = repopath).! == 0)
+                 (Process("git" :: "cherry-pick"             :: "4a6de80c212eed02dc320f077032704c92afc216"     :: Nil, cwd = repopath).! == 0)
 
           require(Process("git" :: "branch"   :: "-f"        :: branchName :: "HEAD"                           :: Nil, cwd = repopath).! == 0)
           require(Process("git" :: "checkout" ::                branchName                                     :: Nil, cwd = repopath).! == 0)
@@ -1430,7 +1430,6 @@ object Cpan2Nix {
                             |   lib.concatMap ({pkgs, dotperl}: [
                             |     pkgs.nix-serve
                             |   # pkgs.hydra
-                            |     (dotperl pkgs).pkgs.MooseXAttributeHelpers
                             |     ((dotperl pkgs).withPackages(p: lib.filter
                             |                                  (x: (x != null) && (lib.isDerivation x) && x.meta.available)
                             |                                  [

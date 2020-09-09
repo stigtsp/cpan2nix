@@ -292,7 +292,7 @@ case class CpanPackage private(author: Author, pname: Name, version: Version, pa
                                                   case "WWW-PagerDuty-0.2.meta"                                      => metaContent.replace("\"LWP::UserAgent\" : 0,"                                                , "\"LWP::UserAgent\" : 0"                                                 )
                                                   case "TAP-Formatter-BambooExtended-1.01.meta"                      => metaContent.replace("\"File::Slurp\" : \"0\","                                               , ",\"File::Slurp\" : \"0\","                                              )
                                                   case "Monitoring-Icinga2-Client-REST-2.0.4.meta"                   => metaContent.replace("\"JSON::PP version 2.97001\""                                           , "\"JSON::PP version 2.97001\"}"                                          )
-                                                  case "Devel-FastProf-0.08.meta"                                    => metaContent.replace("\"fast\" perl per-line profiler"                                        , "\"fast perl per-line profiler\""                                        )
+                                                  case "URI-cpan-1.007.meta"                                         => metaContent.replace("URI::_generic"                                                          , "URI"                                                                    )
                                                   case "Data-Predicate-2.1.1.meta"                                   => metaContent.replace("- \"ayates\" <\"\">"                                                    , "- \"ayates <>\""                                                        )
                                                   case "Mojolicious-Command-migration-0.17.meta"
                                                      | "Mojolicious-Plugin-Sentry-0.11.meta"
@@ -713,6 +713,7 @@ object CpanErrata {
                                                                                       , Mod("Sub::Exporter")                -> Version("0")
                                                                                       , Mod("LWP")                          -> Version("0"))
                                     , Name("Crypt-DES_EDE3"                   ) -> Map( Mod("Crypt::DES")                   -> Version("0")) // .meta file is 404
+                                    , Name("CPAN-Mini"                        ) -> Map( Mod("LWP::Protocol::https")         -> Version("0")) // https://github.com/NixOS/nixpkgs/pull/97098#pullrequestreview-484545271
                                     ) withDefaultValue Map.empty
 
   // *** pinned packages

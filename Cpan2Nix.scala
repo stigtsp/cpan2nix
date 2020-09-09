@@ -1281,11 +1281,13 @@ object Cpan2Nix {
           if (!repopath.exists) {
             require(Process("git" :: "clone" :: "https://github.com/nixos/nixpkgs" :: repopath.getAbsolutePath :: Nil).! == 0)
           } else {
-//          require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
+            require(Process("git" :: "fetch" :: "origin" :: "staging" :: Nil, cwd = repopath).! == 0)
+//          require(Process("git" :: "fetch" :: "origin" :: "staging-20.09" :: Nil, cwd = repopath).! == 0)
           }
 
           val branchName = { val now = new java.util.Date; f"cpan2nix-${1900+now.getYear}%04d-${1+now.getMonth}%02d-${now.getDate}%02d" }
           require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/staging"                       :: Nil, cwd = repopath).! == 0)
+//        require(Process("git" :: "checkout" :: "-f"        :: "remotes/origin/staging-20.09"                 :: Nil, cwd = repopath).! == 0)
 
 
 //        require(Process("git" :: "cherry-pick"             :: "df55a4aa20c813625bd9bbf46ffb7d77dd089bba"     :: Nil, cwd = repopath).! == 0)
